@@ -9,12 +9,12 @@ out/
 win-unpacked/
 *.exe
 
-# Archivos temporales
+# Archivos temporales y de sistema
 .DS_Store
 Thumbs.db
 
 # Facturas generadas
 facturas_pos/
 
-# Archivos de entorno
+# Archivos de entorno o configuración local
 .env
