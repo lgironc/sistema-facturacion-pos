@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+npm-debug.log*
+
+# Builds de Electron
+dist/
+build/
+out/
+win-unpacked/
+*.exe
+
+# Archivos temporales
+.DS_Store
+Thumbs.db
+
+# Facturas generadas
+facturas_pos/
+
+# Archivos de entorno
+.env
