@@ -1,0 +1,12 @@
+directories:
+  output: dist
+  buildResources: build
+appId: com.sistemafacturacion.app
+productName: Sistema de Facturación
+files:
+  - filter:
+      - '**/*'
+      - '!dist/**'
+win:
+  target: nsis
+electronVersion: 38.3.0
