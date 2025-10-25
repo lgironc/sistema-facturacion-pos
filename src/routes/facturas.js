@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { Cliente, Producto, Factura, FacturaDetalle } = require('../models');
+const { Cliente, Producto, Factura, FacturaDetalle, HistorialInventario } = require('../models');
 const PDFDocument = require('pdfkit');
 
 // ===========================
@@ -69,6 +69,18 @@ router.post('/', async (req, res) => {
       // Restar stock
       producto.stock -= item.cantidad;
       await producto.save();
+
+      console.log('✅ Registrando salida en historial:', producto.nombre, 'Cantidad:', -item.cantidad);
+
+
+      // Registrar salida por venta
+await HistorialInventario.create({
+  productoId: producto.id,
+  cantidad: -item.cantidad, // negativo porque es salida
+  tipo: 'venta',
+  stockFinal: producto.stock,
+  descripcion: `Venta en factura #${factura.id}`
+});
 
       // Sumar total
       totalFactura += item.cantidad * producto.precioVenta;

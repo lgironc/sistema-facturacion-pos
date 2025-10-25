@@ -35,7 +35,11 @@ const Producto = sequelize.define('Producto', {
   fechaIngreso: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW // Guarda fecha automáticamente
-  }
+  }, activo: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: true
+}
+
 
 },
 

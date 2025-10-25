@@ -21,18 +21,22 @@ router.post('/', async (req, res) => {
       stock: stock || 0
     });
 
-    // Registrar historial solo si stock > 0
-    if (stock && stock > 0) {
-      await HistorialInventario.create({
-        productoId: producto.id,
-        cantidad: stock
-      });
-    }
+    // 🔍 Debug: verificar que entra aquí
+console.log('🟢 Registrando historial de producto:', producto.id, stock);
 
-    res.json({ message: 'Producto creado con éxito', producto });
+   // ✅ Registrar el movimiento en el historial (entrada inicial)
+    await HistorialInventario.create({
+      productoId: producto.id,
+      cantidad: stock || 0,
+      tipo: 'entrada',
+      stockFinal: producto.stock,
+      descripcion: 'Registro inicial'
+    });
+
+    res.json(producto);
   } catch (error) {
-    console.error('Error creando producto:', error);
-    res.status(500).json({ error: 'Error al crear producto' });
+    console.error('Error al crear producto:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -89,7 +93,7 @@ router.get('/', async (req, res) => {
 });
 
 // ===========================
-// DELETE - Eliminar producto
+// INACTIVAR - Marcar producto como inactivo
 // ===========================
 router.delete('/:id', async (req, res) => {
   try {
@@ -98,11 +102,37 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    await producto.destroy();
-    res.json({ message: 'Producto eliminado correctamente' });
+    // En lugar de eliminar, lo marcamos como inactivo
+    producto.activo = false;
+    await producto.save();
+
+    res.json({ message: 'Producto marcado como inactivo correctamente' });
   } catch (error) {
+    console.error('Error al inactivar producto:', error); // <--- para debug
     res.status(500).json({ error: error.message });
   }
 });
+
+// ===========================
+// REACTIVAR PRODUCTO
+// ===========================
+router.patch('/:id/reactivar', async (req, res) => {
+  try {
+    const producto = await Producto.findByPk(req.params.id);
+    if (!producto) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    producto.activo = true;
+    await producto.save();
+
+    res.json({ message: 'Producto reactivado correctamente' });
+  } catch (error) {
+    console.error('Error al reactivar producto:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 
 module.exports = router;

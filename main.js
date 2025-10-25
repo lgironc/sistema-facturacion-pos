@@ -7,62 +7,70 @@ const https = require('https');
 
 console.log('✅ main.js cargado correctamente');
 
-// ✅ Listener IPC para descargar y abrir el PDF
-ipcMain.on('abrir-pdf', async (event, url) => {
-  console.log(' Listener IPC recibido en main. URL:', url);
+ipcMain.handle('abrir-pdf', async (event, url) => {
+  console.log('📌 Listener IPC recibido en main. URL:', url);
 
   try {
-    // Asegurar URL absoluta
+    // ✅ 1. Si ya es una ruta local existente, abrimos directamente
+    if (fs.existsSync(url)) {
+      console.log('📄 Abriendo PDF local:', url);
+      const result = await shell.openPath(url);
+      return { success: !result, path: url, error: result || null };
+    }
+
+    // ✅ 2. Si es una URL relativa tipo /facturas/27/pdf → convertir a HTTP
     if (!url.startsWith('http')) {
       url = `http://localhost:4000${url}`;
+      console.log('🌐 URL convertida a absoluta:', url);
     }
 
     console.log('[MAIN] Descargando PDF desde:', url);
 
-    // Extraer ID de factura (/facturas/27/pdf → "27")
+    // ✅ 3. Extraemos ID de factura para nombrar el archivo
     const match = url.match(/\/facturas\/(\d+)\/pdf/);
     let facturaId = match ? match[1] : Date.now();
     const numeroFactura = `INT-${String(facturaId).padStart(4, '0')}`;
 
-    // 📂 Crear carpeta en Documentos/FacturasPOS
+    // ✅ 4. Crear carpeta en Documentos/FacturasPOS
     const folderPath = path.join(app.getPath('documents'), 'FacturasPOS');
     if (!fs.existsSync(folderPath)) {
       fs.mkdirSync(folderPath, { recursive: true });
-      console.log('Carpeta creada:', folderPath);
+      console.log('📂 Carpeta creada:', folderPath);
     }
 
-    // Ruta final del PDF guardado
+    // ✅ 5. Ruta final del archivo PDF descargado
     const filePath = path.join(folderPath, `Factura_${numeroFactura}.pdf`);
-
     const client = url.startsWith('https') ? https : http;
 
-    client.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        console.error(` Error al descargar PDF: ${response.statusCode}`);
-        return;
-      }
+    await new Promise((resolve, reject) => {
+      client.get(url, (response) => {
+        if (response.statusCode !== 200) {
+          return reject(`Error al descargar PDF: ${response.statusCode}`);
+        }
 
-      const fileStream = fs.createWriteStream(filePath);
+        const fileStream = fs.createWriteStream(filePath);
+        response.pipe(fileStream);
 
-      response.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close();
+          console.log(`✅ PDF guardado como: ${filePath}`);
+          resolve();
+        });
 
-      fileStream.on('finish', () => {
-        fileStream.close();
-        console.log(` PDF guardado como: ${filePath}`);
-
-        // ✅ Abrir archivo guardado
-        shell.openPath(filePath);
-
-
-      });
-    }).on('error', (err) => {
-      console.error(' Error en la descarga:', err);
+      }).on('error', reject);
     });
 
+    // ✅ 6. Abrir el PDF descargado
+    const result = await shell.openPath(filePath);
+    return { success: !result, path: filePath, error: result || null };
+
   } catch (error) {
-    console.error(' Error general en descarga/abrir PDF:', error);
+    console.error('❌ Error general en descarga/abrir PDF:', error);
+    return { success: false, error };
   }
 });
+
+
 
 let backendProcess;
 let win;

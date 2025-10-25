@@ -18,7 +18,16 @@ const HistorialInventario = sequelize.define('HistorialInventario', {
   descripcion: {
     type: DataTypes.STRING,
     allowNull: true
-  }
+  },
+  tipo: {
+  type: DataTypes.STRING,
+  allowNull: false // ejemplo: 'entrada', 'salida', 'venta'
+},
+stockFinal: {
+  type: DataTypes.INTEGER,
+  allowNull: false
+}
+
 }, {
   tableName: 'HistorialInventario'
 });

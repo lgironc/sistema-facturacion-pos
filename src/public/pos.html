@@ -57,6 +57,11 @@
         <button class="nav-link" id="historial-tab" data-bs-toggle="tab" data-bs-target="#historialSection"
           type="button" role="tab">📜 Historial Inventario</button>
       </li>
+      <li class="nav-item" role="presentation">
+      <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab">⚙️ Configuración</button>
+      </li>
+
+
     </ul>
 
     <!-- ✅ Contenido de pestañas -->
@@ -198,17 +203,27 @@
       <div class="tab-pane fade" id="historialSection" role="tabpanel">
         <div class="card">
           <div class="card-body">
-            <h5 class="mb-3">Historial de Entradas de Inventario</h5>
+            <h5 class="mb-3">Historial de Inventario</h5>
             <div class="d-flex justify-content-end mb-2">
               <button id="btnRefrescarHistorial" class="btn btn-outline-secondary btn-sm">Refrescar</button>
             </div>
+
+            <div class="d-flex align-items-center mb-3 gap-2">
+    <select id="filtroProductoHistorial" class="form-select w-auto">
+        <option value="">Todos los productos</option>
+    </select>
+    <input type="text" id="buscarHistorial" class="form-control w-auto" placeholder="Buscar por producto...">
+</div>
+
             <div class="table-responsive">
               <table class="table table-hover table-sm">
                 <thead class="table-light">
                   <tr>
                     <th>Producto</th>
+                    <th>Movimiento</th>
                     <th class="text-end">Cantidad</th>
-                    <th class="text-end">Fecha de Ingreso</th>
+                    <th class="text-end">Stock Final</th>
+                    <th class="text-end">Fecha</th>
                   </tr>
                 </thead>
                 <tbody id="historialBody"></tbody>
@@ -298,6 +313,42 @@
   </div>
 </div>
 
+<!-- ✅ Contenedor para los Toasts -->
+<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;"></div>
+
+<!-- ✅ Modal de confirmación: Eliminar producto -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-3">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Eliminar producto</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        ¿Seguro que deseas eliminar <strong id="deleteProductName">este producto</strong>?
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="btnConfirmDelete">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ⚙️ Pestaña de Configuración -->
+<div class="tab-pane fade p-3" id="config" role="tabpanel" aria-labelledby="config-tab">
+  <h5 class="mb-3">⚙️ Configuraciones del sistema</h5>
+
+  <div class="form-check form-switch mb-3">
+    <input class="form-check-input" type="checkbox" id="switchEliminarProductos">
+    <label class="form-check-label" for="switchEliminarProductos">Permitir eliminar productos</label>
+  </div>
+
+  <div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" id="switchEliminarClientes">
+    <label class="form-check-label" for="switchEliminarClientes">Permitir eliminar clientes</label>
+  </div>
+</div>
 
 
 <!-- ✅ Scripts -->

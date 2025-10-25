@@ -23,6 +23,7 @@ async function cargarProductos() {
     state.productos = await res.json();
     renderProductosPOS();
     renderProductosAdmin();
+     llenarFiltroHistorialProductos();
   } catch (e) {
     console.error('Error cargando productos:', e);
   }
@@ -31,15 +32,14 @@ async function cargarProductos() {
 function renderProductosPOS() {
   const tbody = el('productosBody');
   if (!tbody) return;
-
+  
   const q = (el('search')?.value || '').toLowerCase();
   tbody.innerHTML = '';
-
+  
   state.productos
-    .filter(p => p.nombre?.toLowerCase().includes(q))
+    .filter(p => p.activo !== false && p.nombre?.toLowerCase().includes(q))
     .forEach(p => {
-      const tr = document.createElement('tr');
-      tr.className = 'product-row';
+      const tr = document.createElement('tr'); 
       tr.innerHTML = `
         <td>${p.nombre}</td>
         <td class="text-end">${formatoQ(p.precioVenta)}</td>
@@ -74,17 +74,35 @@ function renderProductosAdmin() {
       <td class="text-end">${p.stock}</td>
       <td class="text-end">${new Date(p.fechaIngreso || p.createdAt).toLocaleDateString()}</td>
       <td class="text-center">
-        <button class="btn btn-warning btn-sm me-2 btn-editar">✏</button>
-        <button class="btn btn-danger btn-sm btn-eliminar">🗑</button>
-      </td>
+  ${
+    p.activo === false
+      ? `<button class="btn btn-success btn-sm btn-reactivar">♻️ Reactivar</button>`
+      : `
+          <button class="btn btn-warning btn-sm me-2 btn-editar">✏</button>
+          <button class="btn btn-danger btn-sm btn-eliminar">🗑</button>
+        `
+  }
+</td>
+
     `;
 
-    tr.querySelector('.btn-editar').addEventListener('click', () => cargarEdicionProducto(p));
-    tr.querySelector('.btn-eliminar').addEventListener('click', () => eliminarProducto(p.id));
+   // ✅ Botón Editar (solo si está activo)
+    if (p.activo !== false) {
+      tr.querySelector('.btn-editar').addEventListener('click', () => cargarEdicionProducto(p));
+      tr.querySelector('.btn-eliminar').addEventListener('click', () => {
+        abrirModalEliminarProducto(p.id, p.nombre);
+      });
+    }
+
+    // ✅ Botón Reactivar (solo si está inactivo)
+    if (p.activo === false) {
+      tr.querySelector('.btn-reactivar').addEventListener('click', () => reactivarProducto(p.id));
+    }
 
     tbody.appendChild(tr);
   });
 }
+
 // =========================================
 // 🛒 CARRITO Y FACTURACIÓN (REACTIVADO)
 // =========================================
@@ -145,9 +163,45 @@ function renderCarrito() {
   el('totalCell').textContent = formatoQ(total);
 }
 
+function mostrarToast(mensaje, tipo = 'info') {
+  const toastContainer = document.getElementById('toastContainer');
+  if (!toastContainer) return;
+
+  // Opciones de color según tipo
+  const colores = {
+    success: 'bg-success text-white',
+    danger: 'bg-danger text-white',
+    warning: 'bg-warning text-dark',
+    info: 'bg-info text-dark'
+  };
+
+  const colorClase = colores[tipo] || colores.info;
+
+  // Crear el toast
+  const toast = document.createElement('div');
+  toast.className = `toast align-items-center ${colorClase} border-0 show`;
+  toast.setAttribute('role', 'alert');
+
+  toast.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body">${mensaje}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  `;
+
+  // Agregar y mostrar
+  toastContainer.appendChild(toast);
+
+  // Auto-eliminar después de 3 segundos
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+
 async function facturar() {
   if (!state.carrito.length) {
-    alert('El carrito está vacío.');
+    mostrarToast('El carrito está vacío.', 'warning');
     return;
   }
 
@@ -157,7 +211,7 @@ async function facturar() {
 
   // Validar efectivo
   if (isNaN(efectivo) || efectivo <= 0) {
-    alert('Ingrese un monto válido en efectivo.');
+    mostrarToast('Ingrese un monto válido en efectivo.', 'danger');
     return;
   }
 
@@ -204,18 +258,14 @@ async function facturar() {
     cargarProductos();
     efectivoRecibidoInput.value = '';
 
-    // 📄 Obtener PDF desde el backend
-    const pdfRes = await fetch(`${BASE}/facturas/${facturaId}/pdf`);
-    const pdfData = await pdfRes.json();
+    // 📄 Mostrar botón para abrir PDF generado
+btnAbrirPDF.style.display = 'block';
+btnAbrirPDF.onclick = () => {
+  // Le pasamos la ruta para que el main.js lo descargue, guarde y abra
+  abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
+};
 
-    if (pdfData.ok && pdfData.filePath) {
-      btnAbrirPDF.style.display = 'block';
-      btnAbrirPDF.onclick = () => {
-        window.open(`file://${pdfData.filePath}`);
-      };
-    } else {
-      errorDiv.textContent = 'Factura guardada, pero no se pudo generar el PDF.';
-    }
+
 
   } catch (err) {
     console.error('Error facturando:', err);
@@ -225,17 +275,122 @@ async function facturar() {
 
 
 // =========================================
-// 🗑 ELIMINAR PRODUCTO
+// 🗑 ELIMINAR PRODUCTO (NUEVA LÓGICA CON MODAL)
 // =========================================
-async function eliminarProducto(id) {
-  if (!confirm('¿Seguro de eliminar este producto?')) return;
+let _productoAEliminar = null;
+
+function abrirModalEliminarProducto(id, nombre) {
+  // 🚫 Validar permiso para eliminar productos
+  const permitirProductos = localStorage.getItem(CONFIG_KEYS.ELIMINAR_PRODUCTOS) === 'true';
+  if (!permitirProductos) {
+    if (typeof mostrarToast === 'function') {
+      mostrarToast('La eliminación de productos está desactivada ', 'warning');
+    }
+    return;
+  }
+
+  _productoAEliminar = id;
+  const nameSpan = document.getElementById('deleteProductName');
+  if (nameSpan) nameSpan.textContent = nombre || `ID ${id}`;
+
+  const modalEl = document.getElementById('confirmDeleteModal');
+  if (!modalEl) return;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
+function abrirModalEliminarCliente(id, nombre) {
+  // Validar permiso
+  const permitirClientes = localStorage.getItem(CONFIG_KEYS.ELIMINAR_CLIENTES) === 'true';
+  if (!permitirClientes) {
+    mostrarToast('La eliminación de clientes está desactivada ⚠️', 'warning');
+    return;
+  }
+
+  // Guardar ID de cliente
+  _clienteAEliminar = id;
+  _productoAEliminar = null; // Aseguramos que no hay un producto activo
+
+  // Cambiar texto del modal
+  const nameSpan = document.getElementById('deleteProductName');
+  if (nameSpan) nameSpan.textContent = nombre || `Cliente ID ${id}`;
+
+  const modalEl = document.getElementById('confirmDeleteModal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
+
+
+async function confirmarEliminar() {
   try {
-    await fetch(`${BASE}/productos/${id}`, { method: 'DELETE' });
-    await cargarProductos();
-  } catch (e) {
-    console.error('Error eliminando producto:', e);
+    // ✅ Si estamos eliminando un producto
+    if (_productoAEliminar) {
+      const res = await fetch(`${BASE}/productos/${_productoAEliminar}`, { method: 'DELETE' });
+      if (!res.ok) {
+        mostrarToast('No se pudo marcar el producto como inactivo.', 'danger');
+        return;
+      }
+      await cargarProductos();
+      mostrarToast('Producto marcado como inactivo ✅', 'success');
+
+    }
+
+    // ✅ Si estamos eliminando un cliente
+    if (_clienteAEliminar) {
+      const res = await fetch(`${BASE}/clientes/${_clienteAEliminar}`, { method: 'DELETE' });
+      if (!res.ok) {
+        mostrarToast('No se pudo eliminar el cliente.', 'danger');
+        return;
+      }
+      await cargarClientes();
+      mostrarToast('Cliente eliminado correctamente ✅', 'success');
+    }
+
+  } catch (err) {
+    mostrarToast('Ocurrió un error al eliminar.', 'danger');
+  } finally {
+    // Reset variables
+    _productoAEliminar = null;
+    _clienteAEliminar = null;
+    cerrarModalEliminarProducto();
   }
 }
+
+async function reactivarProducto(id) {
+  try {
+    const res = await fetch(`${BASE}/productos/${id}/reactivar`, { method: 'PATCH' });
+    if (!res.ok) throw new Error('Error al reactivar');
+
+    await cargarProductos();
+    mostrarToast('Producto reactivado correctamente ✅', 'success');
+  } catch (e) {
+    mostrarToast('No se pudo reactivar el producto ❌', 'danger');
+  }
+}
+
+
+
+function cerrarModalEliminarProducto() {
+  const modalEl = document.getElementById('confirmDeleteModal');
+  const modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.hide();
+}
+
+
+function abrirFacturaPDF(urlFactura) {
+  console.log("🟢 Llamando a abrirFacturaPDF con:", urlFactura);
+  if (window.electronAPI && window.electronAPI.abrirPDF) {
+    return window.electronAPI.abrirPDF(urlFactura).then(res => {
+      console.log("📄 Respuesta de IPC:", res);
+    });
+  } else {
+    console.error('❌ electronAPI no está disponible.');
+  }
+}
+
+
 
 // =========================================
 // 📦 CREAR PRODUCTO
@@ -273,7 +428,7 @@ async function crearCliente() {
   const direccion = el('cliDireccion').value;
 
   if (!nombre) {
-    alert('El nombre del cliente es obligatorio.');
+    mostrarToast('El nombre del cliente es obligatorio.', 'warning');
     return;
   }
 
@@ -319,7 +474,7 @@ function renderClientes() {
       <td>${c.telefono || '-'}</td>
       <td>${c.direccion || '-'}</td>
       <td class="text-center">
-        <button class="btn btn-danger btn-sm" onclick="eliminarCliente(${c.id})">🗑</button>
+        <button class="btn btn-danger btn-sm" onclick="abrirModalEliminarCliente(${c.id}, '${c.nombre}')">🗑</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -354,17 +509,90 @@ function renderHistorial() {
   const tbody = el('historialBody');
   if (!tbody) return;
 
+  const filtroProductoId = el('filtroProductoHistorial')?.value || '';
+  const filtroTexto = (el('buscarHistorial')?.value || '').toLowerCase();
+
   tbody.innerHTML = '';
-  state.historial.forEach(h => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${h.Producto?.nombre || 'N/A'}</td>
-      <td class="text-end">${h.cantidad}</td>
-      <td class="text-end">${new Date(h.createdAt).toLocaleString()}</td>
-    `;
-    tbody.appendChild(tr);
+
+  state.historial
+    .filter(h => {
+      // ✅ Filtro por producto desde el ComboBox
+      const coincProducto = filtroProductoId === '' || h.Producto?.id == filtroProductoId;
+
+      // ✅ Filtro por texto en el nombre del producto
+      const coincTexto = h.Producto?.nombre?.toLowerCase().includes(filtroTexto);
+
+      return coincProducto && coincTexto;
+    })
+    .forEach(h => {
+  // Determinar si es entrada o venta
+  const esEntrada = h.tipo === 'entrada';
+  const movimiento = esEntrada ? 'Entrada' : 'Venta';
+  const cantidadFormateada = (esEntrada ? '+' : '-') + Math.abs(h.cantidad);
+  const claseCantidad = esEntrada ? 'text-success' : 'text-danger';
+  const fecha = new Date(h.createdAt).toLocaleString();
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${h.Producto?.nombre || 'N/A'}</td>
+    <td>${movimiento}</td>
+    <td class="text-end ${claseCantidad}">${cantidadFormateada}</td>
+    <td class="text-end">${h.stockFinal ?? '-'}</td>
+    <td class="text-end">${fecha}</td>
+  `;
+  tbody.appendChild(tr);
+});
+
+}
+
+function llenarFiltroHistorialProductos() {
+  const select = el('filtroProductoHistorial');
+  if (!select) return;
+
+  // Limpiar y añadir opción "Todos"
+  select.innerHTML = '<option value="">Todos los productos</option>';
+
+  // Agregar productos activos e inactivos
+  state.productos.forEach(p => {
+    const option = document.createElement('option');
+    option.value = p.id;
+    option.textContent = p.nombre;
+    select.appendChild(option);
   });
 }
+
+
+// =============================
+// ⚙ CONFIGURACIÓN (localStorage)
+// =============================
+const CONFIG_KEYS = {
+  ELIMINAR_PRODUCTOS: 'permitirEliminarProductos',
+  ELIMINAR_CLIENTES: 'permitirEliminarClientes'
+};
+
+function cargarConfiguracion() {
+  const prodSwitch = el('switchEliminarProductos');
+  const cliSwitch = el('switchEliminarClientes');
+
+  const permitirProductos = localStorage.getItem(CONFIG_KEYS.ELIMINAR_PRODUCTOS) === 'true';
+  const permitirClientes = localStorage.getItem(CONFIG_KEYS.ELIMINAR_CLIENTES) === 'true';
+
+  if (prodSwitch) prodSwitch.checked = permitirProductos;
+  if (cliSwitch) cliSwitch.checked = permitirClientes;
+}
+
+function guardarConfiguracion() {
+  const prodSwitch = el('switchEliminarProductos');
+  const cliSwitch = el('switchEliminarClientes');
+
+  if (prodSwitch) localStorage.setItem(CONFIG_KEYS.ELIMINAR_PRODUCTOS, prodSwitch.checked);
+  if (cliSwitch) localStorage.setItem(CONFIG_KEYS.ELIMINAR_CLIENTES, cliSwitch.checked);
+
+  if (typeof mostrarToast === 'function') {
+    mostrarToast('Configuración guardada ✅', 'success');
+  }
+}
+
 
 // =========================================
 // 🚀 INICIALIZACIÓN GLOBAL (Corregida)
@@ -372,18 +600,24 @@ function renderHistorial() {
 function init() {
   cargarProductos();
   cargarHistorial();
+cargarConfiguracion();
+
+// ✅ Guardar configuración cuando cambien los switches
+el('switchEliminarProductos')?.addEventListener('change', guardarConfiguracion);
+el('switchEliminarClientes')?.addEventListener('change', guardarConfiguracion);
 
   // ✅ Crear producto
   el('btnCrearProducto')?.addEventListener('click', crearProducto);
   el('btnCrearCliente')?.addEventListener('click', crearCliente);
   el('btnFacturar')?.addEventListener('click', facturar);
   el('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
+  el('btnConfirmDelete')?.addEventListener('click', confirmarEliminar);
 
+  //el('btnGuardarEdicion')?.addEventListener('click', guardarEdicion);
 
+el('filtroProductoHistorial')?.addEventListener('change', renderHistorial);
+el('buscarHistorial')?.addEventListener('input', renderHistorial);
 
-
-  // ✅ Guardar cambios en modal de edición
-  el('btnGuardarEdicion')?.addEventListener('click', guardarEdicion);
 
   // ✅ Agregar eventos tab para recargar datos al cambiar
   document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
