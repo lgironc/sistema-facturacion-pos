@@ -7,6 +7,10 @@ const Factura = require('./Factura');
 const FacturaDetalle = require('./FacturaDetalle');
 const FacturaBackup = require('./FacturaBackup');
 const HistorialInventario = require('./HistorialInventario'); // ✅ Historial definitivo
+const MovimientoFinanciero = require('./MovimientoFinanciero');
+const CuentaPorCobrar = require('./CuentaPorCobrar');
+
+
 
 // ====================
 // RELACIONES COMPRAS
@@ -38,6 +42,13 @@ Producto.hasMany(FacturaDetalle, { foreignKey: 'productoId', as: 'FacturaDetalle
 HistorialInventario.belongsTo(Producto, { foreignKey: 'productoId', as: 'Producto' });
 Producto.hasMany(HistorialInventario, { foreignKey: 'productoId', as: 'HistorialEntradas' });
 
+Cliente.hasMany(CuentaPorCobrar, { foreignKey: 'clienteId' });
+CuentaPorCobrar.belongsTo(Cliente, { foreignKey: 'clienteId' });
+
+Factura.hasOne(CuentaPorCobrar, { foreignKey: 'facturaId' });
+CuentaPorCobrar.belongsTo(Factura, { foreignKey: 'facturaId' });
+
+
 // ✅ Exportar TODOS los modelos
 module.exports = {
   Proveedor,
@@ -48,5 +59,7 @@ module.exports = {
   Factura,
   FacturaDetalle,
   FacturaBackup,
-  HistorialInventario
+  HistorialInventario,
+  MovimientoFinanciero,
+  CuentaPorCobrar
 };

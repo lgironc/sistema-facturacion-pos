@@ -3,6 +3,8 @@
 // =========================================
 
 const BASE = ''; // Usa mismo host (http://localhost:4000)
+let productoEnEdicion = null;
+
 
 const state = {
   productos: [],
@@ -69,6 +71,7 @@ function renderProductosAdmin() {
   state.productos.forEach(p => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td>${p.id}</td>
       <td>${p.nombre}</td>
       <td class="text-end">${formatoQ(p.precioVenta)}</td>
       <td class="text-end">${p.stock}</td>
@@ -208,12 +211,21 @@ async function facturar() {
   const clienteId = el('clienteId').value || null;
   const efectivoRecibidoInput = el('efectivoRecibido');
   const efectivo = parseFloat(efectivoRecibidoInput.value);
+  const tipoPago = el('tipoPago').value; // "contado" o "credito"
 
-  // Validar efectivo
-  if (isNaN(efectivo) || efectivo <= 0) {
-    mostrarToast('Ingrese un monto válido en efectivo.', 'danger');
+
+if (tipoPago === 'contado') {
+  if (isNaN(efectivo) || efectivo < totalFactura) {
+    mostrarToast('El efectivo debe ser mayor o igual al total en un pago contado.', 'danger');
     return;
   }
+} else if (tipoPago === 'credito') {
+  if (isNaN(efectivo) || efectivo < 0) {
+    mostrarToast('El abono inicial no puede ser negativo.', 'danger');
+    return;
+  }
+}
+
 
   const productos = state.carrito.map(item => ({
     productoId: item.productoId,
@@ -234,7 +246,7 @@ async function facturar() {
     const res = await fetch(`${BASE}/facturas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clienteId, productos })
+      body: JSON.stringify({ clienteId, productos, tipoPago, efectivo })
     });
 
     if (!res.ok) throw new Error('Error creando factura');
@@ -257,6 +269,14 @@ async function facturar() {
     renderCarrito();
     cargarProductos();
     efectivoRecibidoInput.value = '';
+
+    // ✅ Limpiar cliente seleccionado
+el('clienteInput').value = '';
+el('clienteId').value = '';
+
+// ✅ (Opcional) Dar enfoque al buscador de productos para agilizar uso
+el('search')?.focus();
+
 
     // 📄 Mostrar botón para abrir PDF generado
 btnAbrirPDF.style.display = 'block';
@@ -378,6 +398,59 @@ function cerrarModalEliminarProducto() {
   modal.hide();
 }
 
+function cargarEdicionProducto(producto) {
+  productoEnEdicion = producto; // Guardamos el producto actual
+
+  // Llenamos los campos del modal
+  el('editProductId').value = producto.id;
+  el('editProductName').value = producto.nombre;
+  el('editProductCost').value = producto.costoCompra;
+  el('editProductPrice').value = producto.precioVenta;
+  el('editProductCurrentStock').value = producto.stock;
+  el('editProductAddStock').value = 0;
+
+  // Abrimos el modal
+  const modalEl = document.getElementById('editProductModal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
+async function guardarCambiosProducto() {
+  if (!productoEnEdicion) return;
+
+  const id = el('editProductId').value;
+  const nombre = el('editProductName').value;
+  const costoCompra = parseFloat(el('editProductCost').value);
+  const precioVenta = parseFloat(el('editProductPrice').value);
+  const stockExtra = parseInt(el('editProductAddStock').value) || 0;
+
+  try {
+    // ✅ Enviar actualización al backend
+    const res = await fetch(`${BASE}/productos/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, costoCompra, precioVenta, stockExtra })
+    });
+
+    if (!res.ok) throw new Error('Error al actualizar producto');
+
+    mostrarToast('Producto actualizado correctamente.', 'success');
+
+    // Recargar productos
+    await cargarProductos();
+
+    // Cerrar modal
+    const modalEl = document.getElementById('editProductModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    modal.hide();
+
+  } catch (err) {
+    mostrarToast('No se pudo actualizar el producto.', 'danger');
+    console.error(err);
+  }
+}
+
+
 
 function abrirFacturaPDF(urlFactura) {
   console.log("🟢 Llamando a abrirFacturaPDF con:", urlFactura);
@@ -461,6 +534,69 @@ async function cargarClientes() {
   }
 }
 
+// =========================================
+// 🔍 AUTOCOMPLETAR CLIENTE (NOMBRE/NIT)
+// =========================================
+
+function setupClienteAutocomplete() {
+  const input = el('clienteInput');
+  const lista = el('clienteSugerencias');
+  const hiddenId = el('clienteId');
+
+  if (!input || !lista || !hiddenId) return;
+
+  input.addEventListener('input', () => {
+    const query = input.value.toLowerCase().trim();
+    lista.innerHTML = '';
+    lista.style.display = 'none';
+    hiddenId.value = ''; // Se limpia selección previa
+
+    if (!query) return;
+
+    // Buscar coincidencias en clientes existentes
+    const coincidencias = state.clientes.filter(c =>
+      c.nombre.toLowerCase().includes(query) ||
+      (c.nit && c.nit.toLowerCase().includes(query))
+    );
+
+    if (coincidencias.length > 0) {
+      coincidencias.forEach(c => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item list-group-item-action';
+        li.textContent = `${c.nombre} (${c.nit || 'C/F'})`;
+        li.addEventListener('click', () => {
+          input.value = `${c.nombre} (${c.nit || 'C/F'})`;
+          hiddenId.value = c.id;
+          lista.style.display = 'none';
+        });
+        lista.appendChild(li);
+      });
+    }
+
+    // Opción para crear nuevo cliente
+    const liNuevo = document.createElement('li');
+    liNuevo.className = 'list-group-item list-group-item-action text-primary';
+    liNuevo.innerHTML = `➕ Crear nuevo cliente con: <strong>${query}</strong>`;
+    liNuevo.addEventListener('click', () => {
+      lista.style.display = 'none';
+      input.value = query;
+      hiddenId.value = '';
+      abrirModalNuevoCliente(query); // Llamaremos al modal en el siguiente paso
+    });
+    lista.appendChild(liNuevo);
+
+    lista.style.display = 'block';
+  });
+
+  // Ocultar lista al salir del campo
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      lista.style.display = 'none';
+    }, 200);
+  });
+}
+
+
 function renderClientes() {
   const tbody = el('clientesBody');
   if (!tbody) return;
@@ -472,6 +608,7 @@ function renderClientes() {
       <td>${c.id}</td>
       <td>${c.nombre}</td>
       <td>${c.telefono || '-'}</td>
+      <td>${c.nit || '-'}</td>
       <td>${c.direccion || '-'}</td>
       <td class="text-center">
         <button class="btn btn-danger btn-sm" onclick="abrirModalEliminarCliente(${c.id}, '${c.nombre}')">🗑</button>
@@ -509,41 +646,62 @@ function renderHistorial() {
   const tbody = el('historialBody');
   if (!tbody) return;
 
-  const filtroProductoId = el('filtroProductoHistorial')?.value || '';
+  // ⚙️ Normalizar filtros
+  const rawProductoSel = el('filtroProductoHistorial')?.value ?? '';
+  const filtroProductoId = rawProductoSel.trim() === '' ? null : parseInt(rawProductoSel, 10);
+
+  const filtroTipo = (el('filtroTipoHistorial')?.value || '').toLowerCase();
   const filtroTexto = (el('buscarHistorial')?.value || '').toLowerCase();
 
   tbody.innerHTML = '';
 
-  state.historial
-    .filter(h => {
-      // ✅ Filtro por producto desde el ComboBox
-      const coincProducto = filtroProductoId === '' || h.Producto?.id == filtroProductoId;
+  // ✅ Procesar filtro
+  const rows = state.historial.filter(h => {
+    const idMovimiento = (h.Producto?.id != null) ? h.Producto.id
+                      : (h.productoId != null) ? h.productoId
+                      : null;
 
-      // ✅ Filtro por texto en el nombre del producto
-      const coincTexto = h.Producto?.nombre?.toLowerCase().includes(filtroTexto);
+    const productoCoincide = (filtroProductoId == null) || (idMovimiento === filtroProductoId);
+    const tipoMovimiento = (h.tipo || '').toLowerCase();
+    const tipoCoincide = (filtroTipo === '') || (tipoMovimiento === filtroTipo);
+    const nombreProd = (h.Producto?.nombre || h.productoNombre || '').toLowerCase();
+    const textoCoincide = (filtroTexto === '') || nombreProd.includes(filtroTexto);
 
-      return coincProducto && coincTexto;
-    })
-    .forEach(h => {
-  // Determinar si es entrada o venta
-  const esEntrada = h.tipo === 'entrada';
-  const movimiento = esEntrada ? 'Entrada' : 'Venta';
-  const cantidadFormateada = (esEntrada ? '+' : '-') + Math.abs(h.cantidad);
-  const claseCantidad = esEntrada ? 'text-success' : 'text-danger';
-  const fecha = new Date(h.createdAt).toLocaleString();
+    return productoCoincide && tipoCoincide && textoCoincide;
+  });
 
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${h.Producto?.nombre || 'N/A'}</td>
-    <td>${movimiento}</td>
-    <td class="text-end ${claseCantidad}">${cantidadFormateada}</td>
-    <td class="text-end">${h.stockFinal ?? '-'}</td>
-    <td class="text-end">${fecha}</td>
-  `;
-  tbody.appendChild(tr);
-});
+  // ✅ Si no hay resultados, mostrar mensaje
+  if (rows.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td colspan="5" class="text-center text-muted py-3">
+        No hay movimientos que coincidan con los filtros aplicados
+      </td>
+    `;
+    tbody.appendChild(tr);
+    return;
+  }
 
+  // ✅ Renderizar filas cuando hay datos
+  rows.forEach(h => {
+    const esEntrada = (h.tipo || '').toLowerCase() === 'entrada';
+    const movimiento = esEntrada ? 'Entrada' : 'Venta';
+    const cantidadFormateada = (esEntrada ? '+' : '-') + Math.abs(h.cantidad);
+    const claseCantidad = esEntrada ? 'text-success' : 'text-danger';
+    const fecha = new Date(h.createdAt || h.fechaIngreso).toLocaleString();
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${h.Producto?.nombre || 'N/A'}</td>
+      <td>${movimiento}</td>
+      <td class="text-end ${claseCantidad}">${cantidadFormateada}</td>
+      <td class="text-end">${h.stockFinal ?? '-'}</td>
+      <td class="text-end">${fecha}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
+
 
 function llenarFiltroHistorialProductos() {
   const select = el('filtroProductoHistorial');
@@ -555,7 +713,7 @@ function llenarFiltroHistorialProductos() {
   // Agregar productos activos e inactivos
   state.productos.forEach(p => {
     const option = document.createElement('option');
-    option.value = p.id;
+    option.value = String (p.id);
     option.textContent = p.nombre;
     select.appendChild(option);
   });
@@ -601,6 +759,8 @@ function init() {
   cargarProductos();
   cargarHistorial();
 cargarConfiguracion();
+setupClienteAutocomplete();
+
 
 // ✅ Guardar configuración cuando cambien los switches
 el('switchEliminarProductos')?.addEventListener('change', guardarConfiguracion);
@@ -612,11 +772,17 @@ el('switchEliminarClientes')?.addEventListener('change', guardarConfiguracion);
   el('btnFacturar')?.addEventListener('click', facturar);
   el('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
   el('btnConfirmDelete')?.addEventListener('click', confirmarEliminar);
-
-  //el('btnGuardarEdicion')?.addEventListener('click', guardarEdicion);
-
-el('filtroProductoHistorial')?.addEventListener('change', renderHistorial);
+  el('btnSaveProductChanges')?.addEventListener('click', guardarCambiosProducto);
+ 
+  el('search')?.addEventListener('input', renderProductosPOS);
+  el('filtroProductoHistorial')?.addEventListener('change', renderHistorial);
+el('filtroTipoHistorial')?.addEventListener('change', renderHistorial);
 el('buscarHistorial')?.addEventListener('input', renderHistorial);
+el('btnRefrescarHistorial')?.addEventListener('click', async () => {
+  await cargarHistorial();
+  renderHistorial();
+});
+
 
 
   // ✅ Agregar eventos tab para recargar datos al cambiar

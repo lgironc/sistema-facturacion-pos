@@ -41,44 +41,50 @@ console.log('🟢 Registrando historial de producto:', producto.id, stock);
 });
 
 // ===========================
-// PUT - Actualizar producto
+// PUT - Editar producto (y sumar stock si aplica)
 // ===========================
 router.put('/:id', async (req, res) => {
   try {
-    const { nombre, costoCompra, precioVenta, stock } = req.body;
+    let { nombre, costoCompra, precioVenta, stockExtra } = req.body;
+stockExtra = parseInt(stockExtra) || 0;
 
+
+    // Buscar producto
     const producto = await Producto.findByPk(req.params.id);
     if (!producto) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    const stockAnterior = producto.stock;
-    let diferenciaStock = 0;
-
-    if (stock !== undefined) {
-      diferenciaStock = stock - stockAnterior;
-    }
-
+    // Actualizar campos básicos
     producto.nombre = nombre || producto.nombre;
     producto.costoCompra = costoCompra || producto.costoCompra;
     producto.precioVenta = precioVenta || producto.precioVenta;
-    producto.stock = stock !== undefined ? stock : producto.stock;
-    await producto.save();
 
-    // Registrar historial solo si se sumó stock
-    if (diferenciaStock > 0) {
+    // Sumar stock solo si stockExtra > 0
+    if (stockExtra > 0) {
+      const stockAnterior = producto.stock;
+      producto.stock += stockExtra;
+
+      // Registrar en historial como entrada de reabastecimiento
       await HistorialInventario.create({
         productoId: producto.id,
-        cantidad: diferenciaStock
+        cantidad: stockExtra,
+        tipo: 'entrada',
+        stockFinal: producto.stock,
+        descripcion: `Reabastecimiento (Stock anterior: ${stockAnterior})`
       });
     }
 
+    await producto.save();
+
     res.json({ message: 'Producto actualizado correctamente', producto });
+
   } catch (error) {
     console.error('Error actualizando producto:', error);
     res.status(500).json({ error: 'Error al actualizar producto' });
   }
 });
+
 
 // ===========================
 // GET - Listar productos

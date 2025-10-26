@@ -48,6 +48,9 @@ app.use('/compras', require('./src/routes/compras'));
 app.use('/facturas', require('./src/routes/facturas'));
 app.use('/clientes', require('./src/routes/clientes'));
 app.use('/historial', require('./src/routes/historial'));
+app.use('/finanzas', require('./src/routes/finanzas'));
+app.use('/cuentas', require('./src/routes/cuentasPorCobrar'));
+
 
 
 console.log('✅ Rutas dinámicas registradas');

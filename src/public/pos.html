@@ -58,6 +58,12 @@
           type="button" role="tab">📜 Historial Inventario</button>
       </li>
       <li class="nav-item" role="presentation">
+      <button class="nav-link" id="finanzas-tab" data-bs-toggle="tab" data-bs-target="#finanzasSection" type="button" role="tab">
+      📊 Ingresos y Egresos
+      </button>
+      </li>
+
+      <li class="nav-item" role="presentation">
       <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab">⚙️ Configuración</button>
       </li>
 
@@ -121,15 +127,27 @@
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label">Cliente (opcional)</label>
-                  <input id="clienteId" type="number" class="form-control"
-                    placeholder="ID de cliente o vacío para Mostrador" />
+                  <label for="clienteInput">Cliente (por nombre o NIT)</label>
+                    <input type="text" id="clienteInput" class="form-control" placeholder="Buscar cliente o ingresar NIT...">
+                    <ul id="clienteSugerencias" class="list-group position-absolute w-100" style="z-index: 1000; display:none;"></ul>
+                    <input type="hidden" id="clienteId" value="">
+
+                  
                 </div>
 
                 <div class="mb-3">
                   <label class="form-label">Efectivo recibido (Q)</label>
                   <input id="efectivoRecibido" type="number" class="form-control"
                     placeholder="Ingrese monto recibido" step="0.01" min="0" />
+                </div>
+
+
+                <div class="mb-3">
+                 <label for="tipoPago">Tipo de pago</label>
+                 <select id="tipoPago" class="form-control">
+                 <option value="contado">Contado</option>
+                 <option value="credito">Crédito</option>
+                </select>
                 </div>
 
                 <div class="sticky-actions d-grid gap-2">
@@ -185,6 +203,7 @@
               <table class="table table-hover table-sm">
                 <thead class="table-light">
                   <tr>
+                    <th>ID</th>
                     <th>Producto</th>
                     <th class="text-end">Precio</th>
                     <th class="text-end">Stock</th>
@@ -212,8 +231,16 @@
     <select id="filtroProductoHistorial" class="form-select w-auto">
         <option value="">Todos los productos</option>
     </select>
+
+    <select id="filtroTipoHistorial" class="form-select w-auto">
+        <option value="">Todos los movimientos</option>
+        <option value="entrada">Entradas</option>
+        <option value="venta">Ventas</option>
+    </select>
+
     <input type="text" id="buscarHistorial" class="form-control w-auto" placeholder="Buscar por producto...">
 </div>
+
 
             <div class="table-responsive">
               <table class="table table-hover table-sm">
@@ -264,7 +291,9 @@
                     <th>ID</th>
                     <th>Nombre</th>
                     <th>Teléfono</th>
+                    <th>NIT</th>
                     <th>Dirección</th>
+                    
                     <th class="text-center">Acciones</th>
                   </tr>
                 </thead>
@@ -278,40 +307,55 @@
     </div>
   </div>
 
-  <!-- Modal: Editar producto -->
-<div class="modal fade" id="modalEditarProducto" tabindex="-1" aria-hidden="true">
+  <!-- ✅ MODAL: Editar Producto -->
+<div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Editar producto</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title" id="editProductModalLabel">
+          ✏️ Editar Producto
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <input type="hidden" id="editProdId" />
-        <div class="mb-3">
-          <label class="form-label">Nombre</label>
-          <input id="editProdNombre" type="text" class="form-control" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Costo compra (Q)</label>
-          <input id="editProdCosto" type="number" step="0.01" min="0" class="form-control" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Precio venta (Q)</label>
-          <input id="editProdPrecio" type="number" step="0.01" min="0" class="form-control" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Stock</label>
-          <input id="editProdStock" type="number" min="0" class="form-control" />
-        </div>
+        <form id="editProductForm">
+          <input type="hidden" id="editProductId">
+
+          <div class="mb-3">
+            <label for="editProductName" class="form-label">Nombre</label>
+            <input type="text" id="editProductName" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="editProductCost" class="form-label">Precio de compra</label>
+            <input type="number" id="editProductCost" class="form-control" step="0.01" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="editProductPrice" class="form-label">Precio de venta</label>
+            <input type="number" id="editProductPrice" class="form-control" step="0.01" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Stock actual</label>
+            <input type="number" id="editProductCurrentStock" class="form-control" disabled>
+          </div>
+
+          <div class="mb-3">
+            <label for="editProductAddStock" class="form-label">Agregar stock (+)</label>
+            <input type="number" id="editProductAddStock" class="form-control" step="1" value="0">
+            <div class="form-text">Si no deseas agregar stock, déjalo en 0.</div>
+          </div>
+        </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" id="btnGuardarEdicion" class="btn btn-primary">Guardar</button>
+        <button type="button" class="btn btn-warning" id="btnSaveProductChanges">Guardar cambios</button>
       </div>
     </div>
   </div>
 </div>
+
 
 <!-- ✅ Contenedor para los Toasts -->
 <div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;"></div>
@@ -334,6 +378,55 @@
     </div>
   </div>
 </div>
+
+
+<div class="tab-pane fade" id="finanzasSection" role="tabpanel">
+  <div class="card mt-3">
+    <div class="card-body">
+
+      <h5 class="mb-3">Registrar movimiento financiero</h5>
+
+      <div class="row g-2 mb-3">
+        <div class="col-md-3">
+          <select id="movTipo" class="form-control">
+            <option value="ingreso">Cobro de crédito</option>
+            <option value="egreso">Egreso</option>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <input type="number" id="movMonto" class="form-control" placeholder="Monto Q">
+        </div>
+
+        <div class="col-md-6">
+          <input type="text" id="movDescripcion" class="form-control" placeholder="Descripción (opcional)">
+        </div>
+      </div>
+
+      <button id="btnGuardarMovimiento" class="btn btn-primary">Guardar movimiento</button>
+
+      <hr>
+
+      <h5 class="mb-3">Historial de movimientos</h5>
+
+      <div class="table-responsive">
+        <table class="table table-hover table-sm">
+          <thead class="table-light">
+            <tr>
+              <th>Tipo</th>
+              <th class="text-end">Monto (Q)</th>
+              <th>Descripción</th>
+              <th class="text-end">Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="finanzasBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 
 <!-- ⚙️ Pestaña de Configuración -->
 <div class="tab-pane fade p-3" id="config" role="tabpanel" aria-labelledby="config-tab">

@@ -2,13 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { Cliente, Producto, Factura, FacturaDetalle, HistorialInventario } = require('../models');
 const PDFDocument = require('pdfkit');
+const efectivo = Number(req.body.efectivo) || 0;
+
 
 // ===========================
 // POST - Registrar nueva factura (venta)
 // ===========================
 router.post('/', async (req, res) => {
   try {
-    const { clienteId, productos } = req.body;
+    const { clienteId, productos, tipoPago} = req.body;
 
     // ✅ Validar que productos sea un arreglo y no esté vacío
     if (!Array.isArray(productos) || productos.length === 0) {
@@ -89,6 +91,88 @@ await HistorialInventario.create({
     // ✅ Actualizar total de factura
     factura.total = totalFactura;
     await factura.save();
+
+    const { MovimientoFinanciero, CuentaPorCobrar } = require('../models');
+
+
+
+// ✅ Manejamos contado vs crédito con abono
+if (tipoPago === 'contado') {
+  // Caso 1: Contado
+  await MovimientoFinanciero.create({
+    tipo: 'venta',
+    monto: totalFactura,
+    descripcion: `Factura #${factura.id}`
+  });
+} else if (tipoPago === 'credito') {
+  if (!efectivo || efectivo <= 0) {
+    // Caso 2: Crédito completo SIN abono inicial
+    await CuentaPorCobrar.create({
+      clienteId: clienteSeleccionado.id,
+      facturaId: factura.id,
+      totalFactura: totalFactura,
+      saldoPendiente: totalFactura,
+      estado: 'pendiente'
+    });
+  } else if (efectivo > 0 && efectivo < totalFactura) {
+    // Caso 3: Crédito con abono parcial
+    await MovimientoFinanciero.create({
+      tipo: 'cobro_credito',
+      monto: efectivo,
+      descripcion: `Abono inicial Factura #${factura.id}`
+    });
+
+    let saldoPendiente = totalFactura - efectivo;
+
+  // ✅ Aquí va el paso final:
+  if (saldoPendiente <= 0) saldoPendiente = 0;
+
+    await CuentaPorCobrar.create({
+      clienteId: clienteSeleccionado.id,
+      facturaId: factura.id,
+      totalFactura: totalFactura,
+      saldoPendiente: totalFactura - efectivo,
+      estado: saldoPendiente === 0 ? 'pagado' : 'parcial'
+    });
+  } else if (efectivo >= totalFactura) {
+    // Caso 4: ingresó suficiente para cubrir todo => se trata como contado
+    await MovimientoFinanciero.create({
+      tipo: 'venta',
+      monto: totalFactura,
+      descripcion: `Factura #${factura.id} (convertido desde crédito)`
+    });
+  }
+}
+
+
+// ✅ Si es contado → crear movimiento financiero como antes
+if (tipoPago === 'contado') {
+  await MovimientoFinanciero.create({
+    tipo: 'venta',
+    monto: totalFactura,
+    descripcion: `Factura #${factura.id}`
+  });
+}
+// ✅ Si es crédito → registrar en Cuentas por Cobrar
+else if (tipoPago === 'credito') {
+  await CuentaPorCobrar.create({
+    clienteId: clienteSeleccionado.id,
+    facturaId: factura.id,
+    totalFactura: totalFactura,
+    saldoPendiente: totalFactura,
+    estado: 'pendiente'
+  });
+}
+
+
+
+
+// ✅ Registrar venta como movimiento financiero
+await MovimientoFinanciero.create({
+  tipo: 'venta',
+  monto: totalFactura,
+  descripcion: `Factura #${factura.id}`
+});
 
 
 
