@@ -13,7 +13,16 @@ const MovimientoFinanciero = sequelize.define('MovimientoFinanciero', {
   descripcion: {
     type: DataTypes.STRING,
     allowNull: true
+  }, 
+  facturaId: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+  references: {
+    model: 'Facturas',
+    key: 'id'
   }
+}
+
 }, {
   tableName: 'MovimientosFinancieros'
 });

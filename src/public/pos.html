@@ -32,7 +32,19 @@
     .small-input {
       width: 72px;
     }
+    
   </style>
+
+  <style>
+.tab-content > .tab-pane {
+  display: none !important;
+}
+
+.tab-content > .active {
+  display: block !important;
+}
+</style>
+
 </head>
 
 <body>
@@ -57,6 +69,13 @@
         <button class="nav-link" id="historial-tab" data-bs-toggle="tab" data-bs-target="#historialSection"
           type="button" role="tab">📜 Historial Inventario</button>
       </li>
+
+      <li class="nav-item" role="presentation">
+      <button class="nav-link" id="creditos-tab" data-bs-toggle="tab" data-bs-target="#creditos" type="button" role="tab">
+       💳 Créditos
+      </button>
+      </li>
+
       <li class="nav-item" role="presentation">
       <button class="nav-link" id="finanzas-tab" data-bs-toggle="tab" data-bs-target="#finanzasSection" type="button" role="tab">
       📊 Ingresos y Egresos
@@ -126,29 +145,32 @@
                   </table>
                 </div>
 
-                <div class="mb-3">
-                  <label for="clienteInput">Cliente (por nombre o NIT)</label>
-                    <input type="text" id="clienteInput" class="form-control" placeholder="Buscar cliente o ingresar NIT...">
-                    <ul id="clienteSugerencias" class="list-group position-absolute w-100" style="z-index: 1000; display:none;"></ul>
-                    <input type="hidden" id="clienteId" value="">
+               <div class="mb-3">
+  <label for="clienteInput" class="form-label">Cliente (por nombre o NIT)</label>
+  <input type="text" id="clienteInput" class="form-control" placeholder="Buscar cliente o ingresar NIT...">
+  <input type="hidden" id="clienteId">
+</div>
 
-                  
-                </div>
+<div class="mb-3">
+  <label for="tipoPago" class="form-label">Tipo de pago</label>
+  <select id="tipoPago" class="form-select" onchange="toggleCamposPago()">
+    <option value="contado">Contado</option>
+    <option value="credito">Crédito</option>
+  </select>
+</div>
 
-                <div class="mb-3">
-                  <label class="form-label">Efectivo recibido (Q)</label>
-                  <input id="efectivoRecibido" type="number" class="form-control"
-                    placeholder="Ingrese monto recibido" step="0.01" min="0" />
-                </div>
+<!-- Campo efectivo (solo se muestra si es contado) -->
+<div class="mb-3" id="campoEfectivo" style="display: block;">
+  <label for="efectivoRecibido" class="form-label">Efectivo recibido (Q)</label>
+  <input type="number" id="efectivoRecibido" class="form-control" placeholder="Ingrese monto recibido">
+</div>
 
+<!-- Campo abono (solo se muestra si es crédito) -->
+<div class="mb-3" id="campoAbono" style="display: none;">
+  <label for="abonoCredito" class="form-label">Abono inicial (Q)</label>
+  <input type="number" id="abonoCredito" class="form-control" placeholder="Ingrese abono inicial (opcional)">
+</div>
 
-                <div class="mb-3">
-                 <label for="tipoPago">Tipo de pago</label>
-                 <select id="tipoPago" class="form-control">
-                 <option value="contado">Contado</option>
-                 <option value="credito">Crédito</option>
-                </select>
-                </div>
 
                 <div class="sticky-actions d-grid gap-2">
                   <button id="btnFacturar" class="btn btn-primary btn-lg">Facturar</button>
@@ -304,8 +326,8 @@
         </div>
       </div>
 
-    </div>
-  </div>
+    
+  
 
   <!-- ✅ MODAL: Editar Producto -->
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
@@ -379,10 +401,143 @@
   </div>
 </div>
 
+<div id="resumenCreditos" class="row g-3 mb-3">
+  <!-- Aquí se cargarán los datos automáticamente desde JS -->
+</div>
 
-<div class="tab-pane fade" id="finanzasSection" role="tabpanel">
+
+<div class="tab-pane fade" id="creditos" role="tabpanel" aria-labelledby="creditos-tab">
   <div class="card mt-3">
     <div class="card-body">
+      <h5 class="mb-3">Cuentas por Cobrar (Créditos)</h5>
+      <p class="text-muted">Aquí se mostrarán las facturas pendientes o parcialmente pagadas.</p>
+
+      <div class="row mb-3">
+  <div class="col-md-4">
+    <label for="filtroCliente" class="form-label">Buscar cliente:</label>
+    <input type="text" id="filtroCliente" class="form-control" placeholder="Ingrese nombre del cliente...">
+  </div>
+
+  <div class="col-md-3">
+    <label for="filtroEstado" class="form-label">Estado:</label>
+    <select id="filtroEstado" class="form-select">
+      <option value="todos">Todos</option>
+      <option value="pendiente">Pendientes</option>
+      <option value="parcial">Parciales</option>
+      <option value="pagado">Pagados</option>
+    </select>
+  </div>
+</div>
+
+
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <label for="filtroEstado" class="form-label mb-0 me-2">Estado:</label>
+    <select id="filtroEstado" class="form-select form-select-sm w-auto">
+      <option value="todos">Todos</option>
+      <option value="pendiente">Pendiente</option>
+      <option value="parcial">Parcial</option>
+      <option value="pagado">Pagado</option>
+    </select>
+  </div>
+
+  <div>
+    <label class="form-label mb-0">Último abono:</label>
+    <span id="infoFechasAbono" class="ms-2 text-muted small">(Se mostrará por crédito)</span>
+  </div>
+</div>
+
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm">
+          <thead class="table-light">
+            <tr>
+              <th>N° Factura</th>
+              <th>Cliente</th>
+              <th>Total</th>
+              <th>Abonado</th>
+              <th>Saldo</th>
+              <th>Último abono</th>
+              <th>Estado</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tablaCreditosBody">
+            <tr>
+              <td colspan="7" class="text-center text-muted">No hay datos cargados aún.</td>
+            </tr>
+          </tbody>
+          </table>
+        </div>
+    </div>
+  </div>
+</div>
+
+<!-- 💰 Modal para registrar abono -->
+<div class="modal fade" id="abonoModal" tabindex="-1" aria-labelledby="abonoModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="abonoModalLabel">Registrar abono</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cuentaAbonoId">
+        <p><strong>Saldo pendiente:</strong> <span id="saldoPendienteTexto">Q0.00</span></p>
+
+        <div class="mb-3">
+          <label for="montoAbono" class="form-label">Monto a abonar (Q)</label>
+          <input type="number" id="montoAbono" class="form-control" min="0" step="0.01" placeholder="Ingrese el abono">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="guardarAbono()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 📜 Modal de historial de abonos -->
+<div class="modal fade" id="historialAbonoModal" tabindex="-1" aria-labelledby="historialAbonoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-secondary text-white">
+        <h5 class="modal-title" id="historialAbonoModalLabel">Historial de abonos</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead class="table-light">
+              <tr>
+                <th>Monto</th>
+                <th>Descripción</th>
+                <th>Fecha</th>
+              </tr>
+            </thead>
+            <tbody id="historialAbonoBody">
+              <tr>
+                <td colspan="3" class="text-center text-muted">Cargando...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+      <div class="tab-pane fade" id="finanzasSection" role="tabpanel">
+      <div class="card mt-3">
+      <div class="card-body">
 
       <h5 class="mb-3">Registrar movimiento financiero</h5>
 
@@ -424,8 +579,8 @@
       </div>
 
     </div>
-  </div>
-</div>
+    </div>
+    </div>
 
 
 <!-- ⚙️ Pestaña de Configuración -->
@@ -442,6 +597,11 @@
     <label class="form-check-label" for="switchEliminarClientes">Permitir eliminar clientes</label>
   </div>
 </div>
+
+</div>
+
+
+
 
 
 <!-- ✅ Scripts -->

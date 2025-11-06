@@ -7,6 +7,8 @@ const sequelize = require('./src/database'); // Conexión a SQLite
 const { Cliente } = require('./src/models'); // Importamos Cliente para crear "Mostrador"
 require('./src/models'); // Importar modelos + relaciones
 
+
+
 // Crear la app de Express
 const app = express();
 const PORT = 4000;
@@ -23,7 +25,7 @@ app.use(express.json());
 // =======================
 async function iniciarBaseDatos() {
   try {
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: false });
     console.log('✅ Base de datos SQLite sincronizada correctamente');
 
     // ✅ Crear cliente "Mostrador" automáticamente si no existe

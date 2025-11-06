@@ -2,7 +2,7 @@
 // POS.JS - CONTROL GENERAL DEL SISTEMA POS
 // =========================================
 
-const BASE = ''; // Usa mismo host (http://localhost:4000)
+const BASE = 'http://localhost:4000'; // Usa mismo host (http://localhost:4000)
 let productoEnEdicion = null;
 
 
@@ -208,35 +208,44 @@ async function facturar() {
     return;
   }
 
-  const clienteId = el('clienteId').value || null;
-  const efectivoRecibidoInput = el('efectivoRecibido');
-  const efectivo = parseFloat(efectivoRecibidoInput.value);
-  const tipoPago = el('tipoPago').value; // "contado" o "credito"
+// ✅ Calcular total de la factura ANTES de validar
+const totalFactura = state.carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
 
+const clienteId = el('clienteId').value || null;
+const tipoPago = el('tipoPago').value; // "contado" o "credito"
+
+// ✅ Obtener los campos según tipo de pago
+let efectivo = 0;
+let abonoInicial = 0;
 
 if (tipoPago === 'contado') {
-  if (isNaN(efectivo) || efectivo < totalFactura) {
-    mostrarToast('El efectivo debe ser mayor o igual al total en un pago contado.', 'danger');
-    return;
-  }
+  efectivo = parseFloat(el('efectivoRecibido').value) || 0;
 } else if (tipoPago === 'credito') {
-  if (isNaN(efectivo) || efectivo < 0) {
-    mostrarToast('El abono inicial no puede ser negativo.', 'danger');
-    return;
-  }
+  abonoInicial = parseFloat(el('abonoCredito')?.value) || 0;
 }
 
+// ✅ Validación básica
+if (tipoPago === 'contado' && efectivo < totalFactura) {
+  mostrarToast('El efectivo recibido no puede ser menor al total de la factura', 'warning');
+  return;
+}
+
+if (tipoPago === 'credito' && abonoInicial > totalFactura) {
+  mostrarToast('El abono inicial no puede ser mayor al total de la factura', 'warning');
+  return;
+}
 
   const productos = state.carrito.map(item => ({
     productoId: item.productoId,
-    cantidad: item.cantidad
+    cantidad: item.cantidad, 
+    precio: item.precioVenta
   }));
 
   const resultDiv = el('result');
   const errorDiv = el('error');
   const btnAbrirPDF = el('btnAbrirPDF');
 
-  // Limpiar mensajes previos
+  // ✅ Limpiar mensajes previos
   resultDiv.textContent = '';
   errorDiv.textContent = '';
   btnAbrirPDF.style.display = 'none';
@@ -246,46 +255,44 @@ if (tipoPago === 'contado') {
     const res = await fetch(`${BASE}/facturas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clienteId, productos, tipoPago, efectivo })
+      body: JSON.stringify({ clienteId, productos, tipoPago, efectivo, abonoInicial })
     });
 
     if (!res.ok) throw new Error('Error creando factura');
 
     const data = await res.json();
     const facturaId = data.facturaId;
-    const totalFactura = data.total;
 
-    // ✅ Calcular cambio
-    const cambio = efectivo - totalFactura;
+    // ✅ Calcular cambio SOLO si es contado
+    const cambio = tipoPago === 'contado' ? (efectivo - totalFactura) : 0;
 
-    // ✅ Mostrar éxito en el POS
+    // ✅ Mostrar éxito en el POS (mensaje adaptado al tipo de pago)
     resultDiv.innerHTML = `
       ✅ Factura creada (ID: ${facturaId})<br>
-      Total: Q${totalFactura.toFixed(2)} | Efectivo: Q${efectivo.toFixed(2)} | Cambio: Q${cambio.toFixed(2)}
+      Total: Q${totalFactura.toFixed(2)} | Efectivo: Q${efectivo.toFixed(2)}
+      ${tipoPago === 'contado' ? `| Cambio: Q${cambio.toFixed(2)}` : `| Crédito procesado correctamente`}
     `;
 
     // ✅ Limpiar carrito y entradas
     state.carrito = [];
     renderCarrito();
     cargarProductos();
-    efectivoRecibidoInput.value = '';
+    if (el('efectivoRecibido')) el('efectivoRecibido').value = '';
+if (el('abonoCredito')) el('abonoCredito').value = '';
+
 
     // ✅ Limpiar cliente seleccionado
-el('clienteInput').value = '';
-el('clienteId').value = '';
+    el('clienteInput').value = '';
+    el('clienteId').value = '';
 
-// ✅ (Opcional) Dar enfoque al buscador de productos para agilizar uso
-el('search')?.focus();
-
+    // ✅ (Opcional) Dar enfoque al buscador de productos para agilizar uso
+    el('search')?.focus();
 
     // 📄 Mostrar botón para abrir PDF generado
-btnAbrirPDF.style.display = 'block';
-btnAbrirPDF.onclick = () => {
-  // Le pasamos la ruta para que el main.js lo descargue, guarde y abra
-  abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
-};
-
-
+    btnAbrirPDF.style.display = 'block';
+    btnAbrirPDF.onclick = () => {
+      abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
+    };
 
   } catch (err) {
     console.error('Error facturando:', err);
@@ -628,6 +635,205 @@ async function eliminarCliente(id) {
   }
 }
 
+document.getElementById('creditos-tab').addEventListener('click', cargarCreditos);
+document.getElementById('filtroEstado').addEventListener('change', cargarCreditos);
+
+
+async function cargarCreditos() {
+  const tbody = document.getElementById('tablaCreditosBody');
+  const filtroEstado = document.getElementById('filtroEstado').value;
+  const resumenDiv = document.getElementById('resumenCreditos');
+
+  tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>`;
+
+  try {
+    // ✅ Primero obtenemos los datos
+    const res = await fetch(`${BASE}/cuentas`);
+    const cuentas = await res.json();
+
+    if (!Array.isArray(cuentas)) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error: formato de datos inválido</td></tr>`;
+      return;
+    }
+
+    // ✅ Filtros combinados: estado + cliente
+let cuentasFiltradas = cuentas;
+const filtroCliente = document.getElementById('filtroCliente')?.value.trim().toLowerCase() || "";
+
+if (filtroEstado !== "todos") {
+  cuentasFiltradas = cuentasFiltradas.filter(c => c.estado === filtroEstado);
+}
+
+if (filtroCliente !== "") {
+  cuentasFiltradas = cuentasFiltradas.filter(c => {
+    const nombre = (c.Cliente?.nombre || "").toLowerCase();
+    const direccion = (c.Cliente?.direccion || "").toLowerCase();
+    return nombre.includes(filtroCliente) || direccion.includes(filtroCliente);
+  });
+}
+
+
+
+    // ✅ Mostrar tabla
+    if (!cuentasFiltradas.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No hay cuentas en este estado</td></tr>`;
+    } else {
+      tbody.innerHTML = cuentasFiltradas.map(cuenta => {
+        const total = Number(cuenta.totalFactura || 0).toFixed(2);
+        const saldo = Number(cuenta.saldoPendiente || 0).toFixed(2);
+        const abonado = (total - saldo).toFixed(2);
+        const fechaAbono = new Date(cuenta.updatedAt).toLocaleDateString() + ' ' + new Date(cuenta.updatedAt).toLocaleTimeString();
+
+        const estadoBadge =
+          cuenta.estado === 'pendiente' ? `<span class="badge bg-danger">Pendiente</span>` :
+          cuenta.estado === 'parcial' ? `<span class="badge bg-warning text-dark">Parcial</span>` :
+          `<span class="badge bg-success">Pagado</span>`;
+
+        return `
+          <tr>
+            <td>#${cuenta.Factura?.id || '---'}</td>
+            <td>${cuenta.Cliente?.nombre || 'Sin cliente'}</td>
+            <td class="text-end">Q${total}</td>
+            <td class="text-end">Q${abonado}</td>
+            <td class="text-end">Q${saldo}</td>
+            <td>${fechaAbono}</td>
+            <td>${estadoBadge}</td>
+            <td class="d-flex gap-2">
+              <button class="btn btn-sm btn-primary" onclick="abrirAbonoModal(${cuenta.id}, '${saldo}')" ${saldo <= 0 ? 'disabled' : ''}>
+                Abonar
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="verHistorialAbonos(${cuenta.Factura?.id})">
+                Historial
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    // ✅ Después de recibir los datos, calculamos el resumen
+    const pendientes = cuentas.filter(c => c.estado === 'pendiente');
+    const parciales = cuentas.filter(c => c.estado === 'parcial');
+    const pagados = cuentas.filter(c => c.estado === 'pagado');
+
+    const totalPendienteQ = pendientes.reduce((sum, c) => sum + c.saldoPendiente, 0);
+    const totalParcialQ = parciales.reduce((sum, c) => sum + c.saldoPendiente, 0);
+    const totalAbonadoQ = cuentas.reduce((sum, c) => sum + (c.totalFactura - c.saldoPendiente), 0);
+    const totalGeneralPendienteQ = totalPendienteQ + totalParcialQ;
+
+    resumenDiv.innerHTML = `
+      <div class="col-12 col-md-2 text-center bg-light p-2 rounded border">
+        <strong>🔴 Pendientes:</strong><br>${pendientes.length} (Q${totalPendienteQ.toFixed(2)})
+      </div>
+      <div class="col-12 col-md-2 text-center bg-light p-2 rounded border">
+        <strong>🟡 Parciales:</strong><br>${parciales.length} (Q${totalParcialQ.toFixed(2)})
+      </div>
+      <div class="col-12 col-md-2 text-center bg-light p-2 rounded border">
+        <strong>🟢 Pagados:</strong><br>${pagados.length}
+      </div>
+      <div class="col-12 col-md-3 text-center bg-light p-2 rounded border">
+        <strong>💰 Total pendiente:</strong><br>Q${totalGeneralPendienteQ.toFixed(2)}
+      </div>
+      <div class="col-12 col-md-3 text-center bg-light p-2 rounded border">
+        <strong>📥 Total abonado:</strong><br>Q${totalAbonadoQ.toFixed(2)}
+      </div>
+    `;
+
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error cargando datos</td></tr>`;
+  }
+}
+
+
+function abrirAbonoModal(cuentaId, saldo) {
+  document.getElementById('cuentaAbonoId').value = cuentaId;
+  document.getElementById('saldoPendienteTexto').innerText = `Q${parseFloat(saldo).toFixed(2)}`;
+  document.getElementById('montoAbono').value = ""; // Limpiar campo anterior
+  const modal = new bootstrap.Modal(document.getElementById('abonoModal'));
+  modal.show();
+}
+
+
+async function guardarAbono() {
+  const cuentaId = document.getElementById('cuentaAbonoId').value;
+  const monto = parseFloat(document.getElementById('montoAbono').value);
+  const saldoText = document.getElementById('saldoPendienteTexto').innerText.replace('Q', '');
+  const saldoPendiente = parseFloat(saldoText);
+
+  if (!monto || monto <= 0) {
+    mostrarToast('Ingrese un monto válido', 'warning');
+    return;
+  }
+
+  // ✅ Validación frontend: no permitir abonos mayores al saldo
+  if (monto > saldoPendiente) {
+    mostrarToast('❌ El abono no puede ser mayor al saldo pendiente.', 'danger');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${BASE}/cuentas/abonar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cuentaId, monto })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      mostrarToast(data.error || 'Error al registrar el abono', 'danger');
+      return;
+    }
+
+    mostrarToast('✅ Abono registrado correctamente', 'success');
+    
+    // Cerrar modal y refrescar créditos
+    bootstrap.Modal.getInstance(document.getElementById('abonoModal')).hide();
+    cargarCreditos();
+
+  } catch (error) {
+    console.error('Error:', error);
+    mostrarToast('Error al procesar el abono', 'danger');
+  }
+}
+
+
+async function verHistorialAbonos(facturaId) {
+  const tbody = document.getElementById('historialAbonoBody');
+  tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted">Cargando...</td></tr>`;
+
+  try {
+    const res = await fetch(`${BASE}/finanzas?facturaId=${facturaId}`);
+    const movimientos = await res.json();
+
+    if (!movimientos.length) {
+      tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted">No hay abonos registrados</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = movimientos.map(mov => {
+      const fecha = new Date(mov.createdAt).toLocaleDateString() + ' ' + new Date(mov.createdAt).toLocaleTimeString();
+      return `
+        <tr>
+          <td>Q${parseFloat(mov.monto).toFixed(2)}</td>
+          <td>${mov.descripcion || 'Sin descripción'}</td>
+          <td>${fecha}</td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error cargando historial</td></tr>`;
+  }
+
+  const modal = new bootstrap.Modal(document.getElementById('historialAbonoModal'));
+  modal.show();
+}
+
+
+
+
 
 // =========================================
 // 📅 HISTORIAL INVENTARIO
@@ -751,6 +957,22 @@ function guardarConfiguracion() {
   }
 }
 
+function toggleCamposPago() {
+  const tipoPago = document.getElementById('tipoPago').value;
+  const campoEfectivo = document.getElementById('campoEfectivo');
+  const campoAbono = document.getElementById('campoAbono');
+
+  if (tipoPago === 'contado') {
+    campoEfectivo.style.display = 'block';
+    campoAbono.style.display = 'none';
+    document.getElementById('abonoCredito').value = ''; // limpiar
+  } else {
+    campoEfectivo.style.display = 'none';
+    campoAbono.style.display = 'block';
+    document.getElementById('efectivoRecibido').value = ''; // limpiar
+  }
+}
+
 
 // =========================================
 // 🚀 INICIALIZACIÓN GLOBAL (Corregida)
@@ -783,16 +1005,41 @@ el('btnRefrescarHistorial')?.addEventListener('click', async () => {
   renderHistorial();
 });
 
+el('filtroCliente')?.addEventListener('input', cargarCreditos);
+el('filtroEstado')?.addEventListener('change', cargarCreditos);
 
 
-  // ✅ Agregar eventos tab para recargar datos al cambiar
-  document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
-    tab.addEventListener('shown.bs.tab', () => {
-      if (tab.id === 'productos-tab') cargarProductos();
-      if (tab.id === 'clientes-tab') cargarClientes();
-      if (tab.id === 'historial-tab') cargarHistorial();
+
+
+ document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tabButton => {
+  tabButton.addEventListener('shown.bs.tab', (event) => {
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.classList.remove('show', 'active');
     });
+
+    let target = document.querySelector(event.target.getAttribute('data-bs-target'));
+    target.classList.add('show', 'active');
+    
+    const tabContent = document.querySelector('.tab-content');
+    tabContent.style.height = 'auto';
   });
+});
+
 }
+
+const creditosTab = document.getElementById('creditos-tab');
+const resumenDiv = document.getElementById('resumenCreditos');
+
+// Mostrar resumen cuando entro a la pestaña Créditos
+creditosTab.addEventListener('shown.bs.tab', () => {
+  cargarCreditos(); // se vuelve a cargar cada que entres
+});
+
+// Limpiar contenido cuando salgo
+creditosTab.addEventListener('hidden.bs.tab', () => {
+  resumenDiv.innerHTML = '';
+});
+
+
 
 document.addEventListener('DOMContentLoaded', init);

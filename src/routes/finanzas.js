@@ -26,19 +26,31 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ===========================
-// GET - Obtener todos los movimientos
-// ===========================
+const { Sequelize } = require('sequelize');
+
 router.get('/', async (req, res) => {
   try {
+    const { facturaId } = req.query;
+    const where = {};
+
+   if (facturaId) {
+  where.tipo = 'cobro_credito';
+  where.facturaId = facturaId;
+}
+
+
     const movimientos = await MovimientoFinanciero.findAll({
+      where,
       order: [['createdAt', 'DESC']]
     });
+
     res.json(movimientos);
   } catch (error) {
     console.error('Error obteniendo movimientos financieros:', error);
     res.status(500).json({ error: 'Error al obtener movimientos financieros' });
   }
 });
+
+
 
 module.exports = router;

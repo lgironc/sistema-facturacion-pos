@@ -2,177 +2,85 @@ const express = require('express');
 const router = express.Router();
 const { Cliente, Producto, Factura, FacturaDetalle, HistorialInventario } = require('../models');
 const PDFDocument = require('pdfkit');
-const efectivo = Number(req.body.efectivo) || 0;
+const { start } = require('repl');
 
 
-// ===========================
-// POST - Registrar nueva factura (venta)
-// ===========================
+
 router.post('/', async (req, res) => {
   try {
-    const { clienteId, productos, tipoPago} = req.body;
+    const { clienteId, productos, tipoPago, efectivo = 0, abonoInicial = 0 } = req.body;
 
-    // ✅ Validar que productos sea un arreglo y no esté vacío
-    if (!Array.isArray(productos) || productos.length === 0) {
-      return res.status(400).json({ error: 'Debe haber al menos un producto en la factura' });
+    console.log('🧾 Datos recibidos:', { clienteId, tipoPago, efectivo, abonoInicial, productos });
+
+    if (!productos || !productos.length) {
+      return res.status(400).json({ error: 'No hay productos en la factura' });
     }
 
-    // ✅ Validar que las cantidades sean mayores a 0
-    for (const item of productos) {
-      if (!item.cantidad || item.cantidad <= 0) {
-        return res.status(400).json({ error: 'Cada producto debe tener una cantidad mayor a 0' });
-      }
-    }
+    // Calcular total de la factura
+    const totalFactura = productos.reduce((sum, p) => {
+      const precio = parseFloat(p.precio || 0);
+      return sum + (p.cantidad * precio);
+    }, 0);
 
-    // ✅ Si se envió clienteId, verificar si existe
-    let clienteSeleccionado;
-    if (clienteId) {
-      clienteSeleccionado = await Cliente.findByPk(clienteId);
-      if (!clienteSeleccionado) {
-        return res.status(400).json({ error: 'El cliente no existe' });
-      }
-    } else {
-      // ✅ Usar cliente "Mostrador" si no se envió ninguno
-      const [clienteMostrador] = await Cliente.findOrCreate({
-        where: { nombre: 'Mostrador' },
-        defaults: { telefono: '', direccion: '' }
-      });
-      clienteSeleccionado = clienteMostrador;
-    }
+    console.log('💰 Total calculado:', totalFactura);
 
-    // ✅ Crear factura inicialmente con total 0
-    let factura = await Factura.create({
-      clienteId: clienteSeleccionado.id,
-      total: 0
+    // Crear factura
+    const nuevaFactura = await Factura.create({
+      clienteId,
+      total: totalFactura,
+      tipoPago,
+      efectivo
     });
 
-    // ✅ Procesar productos
-    let totalFactura = 0;
-    for (const item of productos) {
-      // Verificar que el producto exista
-      const producto = await Producto.findByPk(item.productoId);
-      if (!producto) {
-        return res.status(400).json({ error: `El producto con ID ${item.productoId} no existe` });
-      }
-
-      // Validar stock disponible
-      if (producto.stock < item.cantidad) {
-        return res.status(400).json({ error: `Stock insuficiente para el producto ${producto.nombre}` });
-      }
-
-      // Crear detalle de factura
+    // Crear detalles
+    for (const p of productos) {
       await FacturaDetalle.create({
-        facturaId: factura.id,
-        productoId: item.productoId,
-        cantidad: item.cantidad,
-        precioUnitario: producto.precioVenta
+        facturaId: nuevaFactura.id,
+        productoId: p.productoId,
+        cantidad: p.cantidad,
+        precio: p.precio
       });
 
-      // Restar stock
-      producto.stock -= item.cantidad;
-      await producto.save();
-
-      console.log('✅ Registrando salida en historial:', producto.nombre, 'Cantidad:', -item.cantidad);
-
-
-      // Registrar salida por venta
-await HistorialInventario.create({
-  productoId: producto.id,
-  cantidad: -item.cantidad, // negativo porque es salida
-  tipo: 'venta',
-  stockFinal: producto.stock,
-  descripcion: `Venta en factura #${factura.id}`
-});
-
-      // Sumar total
-      totalFactura += item.cantidad * producto.precioVenta;
+      // Actualizar stock
+      const prod = await Producto.findByPk(p.productoId);
+      if (prod) {
+        prod.stock -= p.cantidad;
+        await prod.save();
+      }
     }
 
-    // ✅ Actualizar total de factura
-    factura.total = totalFactura;
-    await factura.save();
+    // Si es crédito
+    if (tipoPago === 'credito') {
+      const saldoPendiente = totalFactura - abonoInicial;
 
-    const { MovimientoFinanciero, CuentaPorCobrar } = require('../models');
+      console.log('📘 Creando cuenta por cobrar con saldo:', saldoPendiente);
 
+      await CuentaPorCobrar.create({
+        clienteId,
+        facturaId: nuevaFactura.id,
+        totalFactura,
+        saldoPendiente,
+        estado: saldoPendiente <= 0 ? 'pagado' : (abonoInicial > 0 ? 'parcial' : 'pendiente')
+      });
 
+      if (abonoInicial > 0) {
+        await MovimientoFinanciero.create({
+          tipo: 'cobro_credito',
+          monto: abonoInicial,
+          descripcion: `Abono inicial a factura #${nuevaFactura.id}`,
+          facturaId: nuevaFactura.id
+        });
+      }
+    }
 
-// ✅ Manejamos contado vs crédito con abono
-if (tipoPago === 'contado') {
-  // Caso 1: Contado
-  await MovimientoFinanciero.create({
-    tipo: 'venta',
-    monto: totalFactura,
-    descripcion: `Factura #${factura.id}`
-  });
-} else if (tipoPago === 'credito') {
-  if (!efectivo || efectivo <= 0) {
-    // Caso 2: Crédito completo SIN abono inicial
-    await CuentaPorCobrar.create({
-      clienteId: clienteSeleccionado.id,
-      facturaId: factura.id,
-      totalFactura: totalFactura,
-      saldoPendiente: totalFactura,
-      estado: 'pendiente'
-    });
-  } else if (efectivo > 0 && efectivo < totalFactura) {
-    // Caso 3: Crédito con abono parcial
-    await MovimientoFinanciero.create({
-      tipo: 'cobro_credito',
-      monto: efectivo,
-      descripcion: `Abono inicial Factura #${factura.id}`
-    });
+    res.json({ ok: true, facturaId: nuevaFactura.id });
 
-    let saldoPendiente = totalFactura - efectivo;
-
-  // ✅ Aquí va el paso final:
-  if (saldoPendiente <= 0) saldoPendiente = 0;
-
-    await CuentaPorCobrar.create({
-      clienteId: clienteSeleccionado.id,
-      facturaId: factura.id,
-      totalFactura: totalFactura,
-      saldoPendiente: totalFactura - efectivo,
-      estado: saldoPendiente === 0 ? 'pagado' : 'parcial'
-    });
-  } else if (efectivo >= totalFactura) {
-    // Caso 4: ingresó suficiente para cubrir todo => se trata como contado
-    await MovimientoFinanciero.create({
-      tipo: 'venta',
-      monto: totalFactura,
-      descripcion: `Factura #${factura.id} (convertido desde crédito)`
-    });
+  } catch (error) {
+    console.error('❌ Error creando factura:', error);
+    res.status(500).json({ error: 'Error interno al crear factura', detalle: error.message });
   }
-}
-
-
-// ✅ Si es contado → crear movimiento financiero como antes
-if (tipoPago === 'contado') {
-  await MovimientoFinanciero.create({
-    tipo: 'venta',
-    monto: totalFactura,
-    descripcion: `Factura #${factura.id}`
-  });
-}
-// ✅ Si es crédito → registrar en Cuentas por Cobrar
-else if (tipoPago === 'credito') {
-  await CuentaPorCobrar.create({
-    clienteId: clienteSeleccionado.id,
-    facturaId: factura.id,
-    totalFactura: totalFactura,
-    saldoPendiente: totalFactura,
-    estado: 'pendiente'
-  });
-}
-
-
-
-
-// ✅ Registrar venta como movimiento financiero
-await MovimientoFinanciero.create({
-  tipo: 'venta',
-  monto: totalFactura,
-  descripcion: `Factura #${factura.id}`
 });
+
 
 
 
@@ -185,19 +93,6 @@ await MovimientoFinanciero.create({
   //clienteId: factura.clienteId
  // });
 
-
-    return res.json({
-      message: 'Factura registrada correctamente',
-      facturaId: factura.id,
-      cliente: clienteSeleccionado.nombre,
-      total: totalFactura
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // ===========================
 // GET - Obtener historial completo de facturas
@@ -319,100 +214,124 @@ router.get('/:id/pdf', async (req, res) => {
 
     const filePath = path.join(dirPath, `${numeroFactura}.pdf`);
 
-    // =========================
-    // 🧾 Crear documento PDF
-    // =========================
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+// =========================
+// 🧾 Crear documento PDF
+// =========================
+const PDFDocument = require('pdfkit');
+const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
 
-    // 🖨 Guardarlo en archivo físico
-    const writeStream = fs.createWriteStream(filePath);
-    doc.pipe(writeStream);
+// 🖨 Guardarlo en archivo físico
+const writeStream = fs.createWriteStream(filePath);
+doc.pipe(writeStream);
 
-    // ========================
-    // ENCABEZADO
-    // ========================
-    doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
-    doc.moveDown(0.3);
-    doc.fontSize(10).text('Calle Real 2-89A Zona 1, San Miguel Dueñas | Tel: 5667-9720', { align: 'center' });
-    doc.text('NIT: 7225652', { align: 'center' });
-    doc.moveDown(1);
+// ========================
+// ENCABEZADO
+// ========================
+doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+doc.moveDown(0.3);
+doc.fontSize(10).text('Calle Real 2-89A Zona 1, San Miguel Dueñas | Tel: 5667-9720', { align: 'center' });
+doc.text('NIT: 7225652', { align: 'center' });
+doc.moveDown(1);
 
-    // ========================
-    // INFO FACTURA + CLIENTE
-    // ========================
-    doc.fontSize(12)
-      .text(`Factura No: ${numeroFactura}`, 50, doc.y, { continued: true })
-      .text(`Fecha: ${new Date(factura.fecha).toLocaleDateString()} ${new Date(factura.fecha).toLocaleTimeString()}`, { align: 'right' });
+// ========================
+// INFO FACTURA + CLIENTE
+// ========================
+doc.fontSize(12)
+  .text(`Factura No: ${numeroFactura}`, 50, doc.y, { continued: true })
+  .text(`Fecha: ${new Date(factura.fecha).toLocaleDateString()} ${new Date(factura.fecha).toLocaleTimeString()}`, { align: 'right' });
 
-    doc.moveDown(0.5);
-    doc.text('Cliente:', { underline: true });
-    doc.text(`Nombre: ${factura.Cliente?.nombre || 'Mostrador'}`);
-    if (factura.Cliente?.telefono) doc.text(`Teléfono: ${factura.Cliente.telefono}`);
-    if (factura.Cliente?.direccion) doc.text(`Dirección: ${factura.Cliente.direccion}`);
-    doc.moveDown(1);
+doc.moveDown(0.5);
+doc.text('Cliente:', { underline: true });
+doc.text(`Nombre: ${factura.Cliente?.nombre || 'Mostrador'}`);
+if (factura.Cliente?.telefono) doc.text(`Teléfono: ${factura.Cliente.telefono}`);
+if (factura.Cliente?.direccion) doc.text(`Dirección: ${factura.Cliente.direccion}`);
+doc.moveDown(1);
 
-    // ========================
-    // TABLA DE DETALLES
-    // ========================
-    doc.font('Helvetica-Bold');
-    doc.text('CANT', 50);
-    doc.text('PRODUCTO', 100);
-    doc.text('P. UNIT', 340, undefined, { width: 80, align: 'right' });
-    doc.text('SUBTOTAL', 440, undefined, { width: 80, align: 'right' });
+// ========================
+// TABLA DE DETALLES
+// ========================
+doc.font('Helvetica-Bold');
+doc.text('CANT', 50);
+doc.text('PRODUCTO', 100);
+doc.text('P. UNIT', 340, undefined, { width: 80, align: 'right' });
+doc.text('SUBTOTAL', 440, undefined, { width: 80, align: 'right' });
 
-    doc.moveDown(0.3).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(0.5);
-    doc.font('Helvetica');
+doc.moveDown(0.3).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+doc.moveDown(0.5);
+doc.font('Helvetica');
 
-    factura.FacturaDetalles.forEach(detalle => {
-      const subtotal = detalle.cantidad * detalle.Producto?.precioVenta;
-      const y = doc.y;
+factura.FacturaDetalles.forEach(detalle => {
+  const subtotal = detalle.cantidad * detalle.Producto?.precioVenta;
+  const y = doc.y;
 
-      doc.text(detalle.cantidad.toString(), 50, y);
-      doc.text(detalle.Producto?.nombre || 'N/D', 100, y, { width: 230 });
-      doc.text(`Q${detalle.Producto?.precioVenta.toFixed(2)}`, 340, y, { width: 80, align: 'right' });
-      doc.text(`Q${subtotal.toFixed(2)}`, 440, y, { width: 80, align: 'right' });
+  doc.text(detalle.cantidad.toString(), 50, y);
+  doc.text(detalle.Producto?.nombre || 'N/D', 100, y, { width: 230 });
+  doc.text(`Q${detalle.Producto?.precioVenta.toFixed(2)}`, 340, y, { width: 80, align: 'right' });
+  doc.text(`Q${subtotal.toFixed(2)}`, 440, y, { width: 80, align: 'right' });
 
-      doc.moveDown(0.8);
-    });
+  doc.moveDown(0.8);
+});
 
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(1);
+doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+doc.moveDown(1);
 
-    // ========================
-    // TOTAL (NEGRITA A LA DERECHA)
-    // ========================
-    doc.font('Helvetica-Bold').fontSize(14)
-      .text(`TOTAL: Q${factura.total.toFixed(2)}`, 340, doc.y, { width: 180, align: 'right' });
+// ========================
+// TOTAL (NEGRITA A LA DERECHA)
+// ========================
+doc.font('Helvetica-Bold').fontSize(14)
+  .text(`TOTAL: Q${factura.total.toFixed(2)}`, 340, doc.y, { width: 180, align: 'right' });
 
-    // ========================
-    // PIE DE PÁGINA
-    // ========================
-    const pageWidth = doc.page.width;
-    const margin = 40;
-    const printableWidth = pageWidth - margin * 2;
-    let footerY = doc.page.height - 120;
+// ========================
+// INFORMACIÓN DE PAGO
+// ========================
+doc.moveDown(1);
+doc.font('Helvetica').fontSize(11);
 
-    doc.font('Helvetica').fontSize(12)
-      .text('¡Gracias por su compra!', margin, footerY, {
-        width: printableWidth,
-        align: 'center'
-      });
+const tipoPago = factura.tipoPago || 'contado';
+let pagoTexto = '';
 
-    doc.font('Helvetica-Oblique').fontSize(10)
-      .text(
-        'Factura interna — No válida como FEL hasta su certificación ante SAT',
-        margin,
-        doc.y + 10,
-        { width: printableWidth, align: 'center' }
-      );
+if (tipoPago === 'contado') {
+  const efectivo = parseFloat(factura.efectivo || 0);
+  const cambio = Math.max(efectivo - factura.total, 0);
+  pagoTexto = `💵 Tipo de pago: Contado\nEfectivo recibido: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`;
+} else if (tipoPago === 'credito') {
+  const cuenta = factura.CuentaPorCobrar || {};
+  const abono = factura.total - (cuenta.saldoPendiente || 0);
+  const saldo = cuenta.saldoPendiente ?? factura.total;
+  pagoTexto = `💳 Tipo de pago: Crédito\nAbono inicial: Q${abono.toFixed(2)}\nSaldo pendiente: Q${saldo.toFixed(2)}`;
+} else {
+  pagoTexto = `Tipo de pago: ${tipoPago}`;
+}
 
-    doc.end();
+doc.text(pagoTexto, { align: 'left' });
 
-    writeStream.on('finish', () => {
-      res.sendFile(filePath); // ✅ Devolver PDF directamente al frontend
-    });
+// ========================
+// PIE DE PÁGINA
+// ========================
+const pageWidth = doc.page.width;
+const margin = 40;
+const printableWidth = pageWidth - margin * 2;
+let footerY = doc.page.height - 120;
+
+doc.font('Helvetica').fontSize(12)
+  .text('¡Gracias por su compra!', margin, footerY, {
+    width: printableWidth,
+    align: 'center'
+  });
+
+doc.font('Helvetica-Oblique').fontSize(10)
+  .text(
+    'Factura interna — No válida como FEL hasta su certificación ante SAT',
+    margin,
+    doc.y + 10,
+    { width: printableWidth, align: 'center' }
+  );
+
+doc.end();
+
+writeStream.on('finish', () => {
+  res.sendFile(filePath); // ✅ Devolver PDF directamente al frontend
+});
 
   } catch (error) {
     console.error("Error generando PDF:", error);

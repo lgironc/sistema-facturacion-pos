@@ -48,6 +48,10 @@ CuentaPorCobrar.belongsTo(Cliente, { foreignKey: 'clienteId' });
 Factura.hasOne(CuentaPorCobrar, { foreignKey: 'facturaId' });
 CuentaPorCobrar.belongsTo(Factura, { foreignKey: 'facturaId' });
 
+MovimientoFinanciero.belongsTo(Factura, { foreignKey: 'facturaId' });
+Factura.hasMany(MovimientoFinanciero, { foreignKey: 'facturaId' });
+
+
 
 // ✅ Exportar TODOS los modelos
 module.exports = {
