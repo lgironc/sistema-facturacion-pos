@@ -21,7 +21,7 @@ router.post('/abonar', async (req, res) => {
 
     // Registrar movimiento financiero ligado a la factura real
     await MovimientoFinanciero.create({
-      tipo: 'cobro_credito',
+      tipo: 'ingreso',
       monto,
       descripcion: descripcion || `Abono a factura #${cuenta.facturaId}`,
       facturaId: cuenta.facturaId

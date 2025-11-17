@@ -2,55 +2,43 @@ const express = require('express');
 const router = express.Router();
 const { MovimientoFinanciero } = require('../models');
 
-// ===========================
-// POST - Registrar movimiento manual (ingreso o egreso)
-// ===========================
+// POST /finanzas  (movimiento manual desde la pestaña)
 router.post('/', async (req, res) => {
   try {
     const { tipo, monto, descripcion } = req.body;
 
-    if (!tipo || !monto) {
-      return res.status(400).json({ error: 'Tipo y monto son obligatorios' });
+    if (!['ingreso', 'egreso'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo inválido' });
+    }
+    if (!monto || Number(monto) <= 0) {
+      return res.status(400).json({ error: 'Monto inválido' });
     }
 
-    const movimiento = await MovimientoFinanciero.create({
+    const mov = await MovimientoFinanciero.create({
       tipo,
-      monto,
-      descripcion: descripcion || ''
+      monto: Number(monto),
+      descripcion: descripcion || null,
+      origen: 'manual'   // 👈 opcional
     });
 
-    res.json({ ok: true, movimiento });
-  } catch (error) {
-    console.error('Error creando movimiento financiero:', error);
-    res.status(500).json({ error: 'Error al crear movimiento financiero' });
+    res.status(201).json(mov);
+  } catch (err) {
+    console.error('Error guardando movimiento:', err);
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
-const { Sequelize } = require('sequelize');
-
+// GET /finanzas  (listar TODO)
 router.get('/', async (req, res) => {
   try {
-    const { facturaId } = req.query;
-    const where = {};
-
-   if (facturaId) {
-  where.tipo = 'cobro_credito';
-  where.facturaId = facturaId;
-}
-
-
     const movimientos = await MovimientoFinanciero.findAll({
-      where,
       order: [['createdAt', 'DESC']]
     });
-
     res.json(movimientos);
-  } catch (error) {
-    console.error('Error obteniendo movimientos financieros:', error);
-    res.status(500).json({ error: 'Error al obtener movimientos financieros' });
+  } catch (err) {
+    console.error('Error leyendo movimientos:', err);
+    res.status(500).json({ error: 'Error interno' });
   }
 });
-
-
 
 module.exports = router;

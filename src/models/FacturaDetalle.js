@@ -1,3 +1,4 @@
+// src/models/FacturaDetalle.js
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
@@ -6,7 +7,7 @@ const FacturaDetalle = sequelize.define('FacturaDetalle', {
     type: DataTypes.INTEGER,
     allowNull: false
   },
-  precioUnitario: {
+  precioUnitario: {                // 👈 importante este nombre
     type: DataTypes.FLOAT,
     allowNull: false
   }

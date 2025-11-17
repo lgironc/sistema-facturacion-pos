@@ -4,6 +4,7 @@
 
 const BASE = 'http://localhost:4000'; // Usa mismo host (http://localhost:4000)
 let productoEnEdicion = null;
+let _clienteAEliminar = null; // <- ya la usas en abrirModalEliminarCliente/confirmarEliminar
 
 
 const state = {
@@ -208,37 +209,53 @@ async function facturar() {
     return;
   }
 
-// ✅ Calcular total de la factura ANTES de validar
-const totalFactura = state.carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+  // ✅ Calcular total de la factura ANTES de validar
+  const totalFactura = state.carrito.reduce(
+    (sum, item) => sum + (Number(item.precioVenta) * Number(item.cantidad)),
+    0
+  );
 
-const clienteId = el('clienteId').value || null;
-const tipoPago = el('tipoPago').value; // "contado" o "credito"
+  const clienteId = el('clienteId').value || null;
+  const tipoPago = el('tipoPago').value; // "contado" o "credito"
 
-// ✅ Obtener los campos según tipo de pago
-let efectivo = 0;
-let abonoInicial = 0;
+  // ✅ Obtener los campos según tipo de pago
+  let efectivo = 0;
+  let abonoInicial = 0;
 
-if (tipoPago === 'contado') {
-  efectivo = parseFloat(el('efectivoRecibido').value) || 0;
-} else if (tipoPago === 'credito') {
-  abonoInicial = parseFloat(el('abonoCredito')?.value) || 0;
-}
+  if (tipoPago === 'contado') {
+    efectivo = parseFloat(el('efectivoRecibido').value) || 0;
+  } else if (tipoPago === 'credito') {
+    abonoInicial = parseFloat(el('abonoCredito')?.value) || 0;
+  }
 
-// ✅ Validación básica
-if (tipoPago === 'contado' && efectivo < totalFactura) {
-  mostrarToast('El efectivo recibido no puede ser menor al total de la factura', 'warning');
-  return;
-}
+  // ✅ Validaciones básicas
+  if (tipoPago === 'contado') {
+    if (!Number.isFinite(totalFactura) || totalFactura <= 0) {
+      mostrarToast('Total inválido para facturar', 'warning');
+      return;
+    }
+    if (efectivo < totalFactura) {
+      mostrarToast('El efectivo recibido no puede ser menor al total de la factura', 'warning');
+      return;
+    }
+  }
 
-if (tipoPago === 'credito' && abonoInicial > totalFactura) {
-  mostrarToast('El abono inicial no puede ser mayor al total de la factura', 'warning');
-  return;
-}
+  if (tipoPago === 'credito') {
+    if (abonoInicial < 0) {
+      mostrarToast('El abono inicial no puede ser negativo', 'warning');
+      return;
+    }
+    if (abonoInicial > totalFactura) {
+      mostrarToast('El abono inicial no puede ser mayor al total de la factura', 'warning');
+      return;
+    }
+  }
 
   const productos = state.carrito.map(item => ({
     productoId: item.productoId,
-    cantidad: item.cantidad, 
-    precio: item.precioVenta
+    cantidad: Number(item.cantidad),
+    precioUnitario: Number(item.precioVenta),
+    precio: Number(item.precioVenta)
   }));
 
   const resultDiv = el('result');
@@ -258,35 +275,46 @@ if (tipoPago === 'credito' && abonoInicial > totalFactura) {
       body: JSON.stringify({ clienteId, productos, tipoPago, efectivo, abonoInicial })
     });
 
-    if (!res.ok) throw new Error('Error creando factura');
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
 
-    const data = await res.json();
-    const facturaId = data.facturaId;
+    if (!res.ok) {
+      const msg = data?.detalle || data?.error || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+
+    // 👇👇👇 AQUÍ LEEMOS EL ID DE LA FACTURA
+    const facturaId = data?.facturaId || data?.id;
+    if (!facturaId) {
+      throw new Error('El servidor no devolvió facturaId');
+    }
 
     // ✅ Calcular cambio SOLO si es contado
     const cambio = tipoPago === 'contado' ? (efectivo - totalFactura) : 0;
 
-    // ✅ Mostrar éxito en el POS (mensaje adaptado al tipo de pago)
+    // ✅ Mostrar éxito en el POS
     resultDiv.innerHTML = `
       ✅ Factura creada (ID: ${facturaId})<br>
-      Total: Q${totalFactura.toFixed(2)} | Efectivo: Q${efectivo.toFixed(2)}
-      ${tipoPago === 'contado' ? `| Cambio: Q${cambio.toFixed(2)}` : `| Crédito procesado correctamente`}
+      Total: Q${totalFactura.toFixed(2)} | 
+      ${tipoPago === 'contado'
+        ? `Efectivo: Q${efectivo.toFixed(2)} | Cambio: Q${cambio.toFixed(2)}`
+        : `Crédito procesado correctamente`}
     `;
 
-    // ✅ Limpiar carrito y entradas
+    // ✅ Limpiar carrito y campos
     state.carrito = [];
     renderCarrito();
     cargarProductos();
     if (el('efectivoRecibido')) el('efectivoRecibido').value = '';
-if (el('abonoCredito')) el('abonoCredito').value = '';
-
-
-    // ✅ Limpiar cliente seleccionado
+    if (el('abonoCredito')) el('abonoCredito').value = '';
     el('clienteInput').value = '';
     el('clienteId').value = '';
-
-    // ✅ (Opcional) Dar enfoque al buscador de productos para agilizar uso
     el('search')?.focus();
+
+     // 🔄 👉 AQUÍ: recargar la tabla de Ingresos y Egresos
+    if (typeof cargarMovimientosFinancieros === 'function') {
+      cargarMovimientosFinancieros();
+    }
 
     // 📄 Mostrar botón para abrir PDF generado
     btnAbrirPDF.style.display = 'block';
@@ -832,7 +860,131 @@ async function verHistorialAbonos(facturaId) {
 }
 
 
+// =========================================
+// 💰 FINANZAS: INGRESOS / EGRESOS
+// =========================================
 
+async function cargarMovimientosFinancieros() {
+  const tbody = document.getElementById('finanzasBody');
+  const resumenDiv = document.getElementById('resumenFinanciero');
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>
+  `;
+
+  try {
+    const res = await fetch(`${BASE}/finanzas`);
+    const movimientos = await res.json();
+
+    if (!Array.isArray(movimientos) || movimientos.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="4" class="text-center text-muted">No hay movimientos registrados</td></tr>
+      `;
+      if (resumenDiv) resumenDiv.innerHTML = '';
+      return;
+    }
+
+    // 🔹 Render tabla
+    tbody.innerHTML = movimientos.map(m => {
+      const fecha = new Date(m.createdAt).toLocaleDateString() + ' ' +
+                    new Date(m.createdAt).toLocaleTimeString();
+      const esIngreso = m.tipo === 'ingreso';
+      const signo = esIngreso ? '+' : '-';
+
+      return `
+        <tr>
+          <td>${esIngreso ? 'Ingreso' : 'Egreso'}</td>
+          <td class="text-end ${esIngreso ? 'text-success' : 'text-danger'}">
+            ${signo}Q${Number(m.monto || 0).toFixed(2)}
+          </td>
+          <td>${m.descripcion || m.origen || ''}</td>
+          <td class="text-end">${fecha}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // 🔹 Resumen arriba
+    renderResumenFinanciero(movimientos);
+
+  } catch (err) {
+    console.error('Error cargando movimientos:', err);
+    tbody.innerHTML = `
+      <tr><td colspan="4" class="text-center text-danger">Error cargando movimientos</td></tr>
+    `;
+    if (resumenDiv) resumenDiv.innerHTML = '';
+  }
+}
+
+function renderResumenFinanciero(movimientos) {
+  const resumenDiv = document.getElementById('resumenFinanciero');
+  if (!resumenDiv) return;
+
+  let totalIngresos = 0;
+  let totalEgresos = 0;
+
+  movimientos.forEach(m => {
+    const monto = Number(m.monto || 0);
+    if (m.tipo === 'ingreso') totalIngresos += monto;
+    else if (m.tipo === 'egreso') totalEgresos += monto;
+  });
+
+  const saldo = totalIngresos - totalEgresos;
+
+  resumenDiv.innerHTML = `
+    <div class="col-12 col-md-4 text-center bg-light p-2 rounded border">
+      <strong>💵 Total ingresos:</strong><br>Q${totalIngresos.toFixed(2)}
+    </div>
+    <div class="col-12 col-md-4 text-center bg-light p-2 rounded border">
+      <strong>💸 Total egresos:</strong><br>Q${totalEgresos.toFixed(2)}
+    </div>
+    <div class="col-12 col-md-4 text-center bg-light p-2 rounded border">
+      <strong>🧾 Saldo:</strong><br>Q${saldo.toFixed(2)}
+    </div>
+  `;
+}
+
+async function guardarMovimientoFinanciero() {
+  const tipo = document.getElementById('movTipo')?.value;
+  const monto = parseFloat(document.getElementById('movMonto')?.value || '0');
+  const descripcion = document.getElementById('movDescripcion')?.value || '';
+
+  if (!tipo || !['ingreso', 'egreso'].includes(tipo)) {
+    mostrarToast('Seleccione un tipo de movimiento válido', 'warning');
+    return;
+  }
+  if (!monto || monto <= 0) {
+    mostrarToast('Ingrese un monto válido', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BASE}/finanzas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, monto, descripcion })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      mostrarToast(data.error || 'Error al guardar movimiento', 'danger');
+      return;
+    }
+
+    mostrarToast('Movimiento guardado correctamente ✅', 'success');
+
+    // Limpiar campos
+    document.getElementById('movMonto').value = '';
+    document.getElementById('movDescripcion').value = '';
+
+    // Recargar lista y resumen
+    cargarMovimientosFinancieros();
+
+  } catch (err) {
+    console.error('Error guardando movimiento:', err);
+    mostrarToast('Error al guardar movimiento', 'danger');
+  }
+}
 
 
 // =========================================
@@ -981,7 +1133,9 @@ function init() {
   cargarProductos();
   cargarHistorial();
 cargarConfiguracion();
+cargarClientes();
 setupClienteAutocomplete();
+cargarMovimientosFinancieros();
 
 
 // ✅ Guardar configuración cuando cambien los switches
@@ -1004,6 +1158,8 @@ el('btnRefrescarHistorial')?.addEventListener('click', async () => {
   await cargarHistorial();
   renderHistorial();
 });
+
+ el('btnGuardarMovimiento')?.addEventListener('click', guardarMovimientoFinanciero);
 
 el('filtroCliente')?.addEventListener('input', cargarCreditos);
 el('filtroEstado')?.addEventListener('change', cargarCreditos);
@@ -1040,6 +1196,12 @@ creditosTab.addEventListener('hidden.bs.tab', () => {
   resumenDiv.innerHTML = '';
 });
 
-
+// 🔹 Ingresos y Egresos
+const finanzasTab = document.getElementById('finanzas-tab');
+if (finanzasTab) {
+  finanzasTab.addEventListener('shown.bs.tab', () => {
+    cargarMovimientosFinancieros();
+  });
+}
 
 document.addEventListener('DOMContentLoaded', init);

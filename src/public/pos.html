@@ -147,8 +147,26 @@
 
                <div class="mb-3">
   <label for="clienteInput" class="form-label">Cliente (por nombre o NIT)</label>
-  <input type="text" id="clienteInput" class="form-control" placeholder="Buscar cliente o ingresar NIT...">
-  <input type="hidden" id="clienteId">
+   <div class="position-relative">
+    <!-- 🔍 Input donde escribes el nombre o NIT -->
+    <input
+      type="text"
+      id="clienteInput"
+      class="form-control"
+      placeholder="Buscar cliente o ingresar NIT..."
+      autocomplete="off"
+    >
+
+    <!-- 🔒 Aquí guardaremos el id del cliente seleccionado -->
+    <input type="hidden" id="clienteId">
+
+    <!-- 📜 Lista de sugerencias -->
+    <ul
+      id="clienteSugerencias"
+      class="list-group position-absolute w-100"
+      style="z-index: 2000; display: none;"
+    ></ul>
+  </div>
 </div>
 
 <div class="mb-3">
@@ -535,32 +553,41 @@
 
 
 
-      <div class="tab-pane fade" id="finanzasSection" role="tabpanel">
-      <div class="card mt-3">
-      <div class="card-body">
+<div class="tab-pane fade" id="finanzasSection" role="tabpanel">
+
+  <div class="card mt-3">
+    <div class="card-body">
 
       <h5 class="mb-3">Registrar movimiento financiero</h5>
 
       <div class="row g-2 mb-3">
         <div class="col-md-3">
+          <label class="form-label">Tipo de movimiento</label>
           <select id="movTipo" class="form-control">
-            <option value="ingreso">Cobro de crédito</option>
+            <option value="ingreso">Ingreso</option>
             <option value="egreso">Egreso</option>
           </select>
         </div>
 
         <div class="col-md-3">
-          <input type="number" id="movMonto" class="form-control" placeholder="Monto Q">
+          <label class="form-label">Monto Q</label>
+          <input type="number" id="movMonto" class="form-control" placeholder="0.00">
         </div>
 
         <div class="col-md-6">
-          <input type="text" id="movDescripcion" class="form-control" placeholder="Descripción (opcional)">
+          <label class="form-label">Descripción (opcional)</label>
+          <input type="text" id="movDescripcion" class="form-control" placeholder="Ej: Pago de luz, ajuste, etc.">
         </div>
       </div>
 
-      <button id="btnGuardarMovimiento" class="btn btn-primary">Guardar movimiento</button>
+      <button id="btnGuardarMovimiento" class="btn btn-primary mb-2">
+        Guardar movimiento
+      </button>
 
       <hr>
+
+      <!-- 🔹 Resumen superior -->
+      <div id="resumenFinanciero" class="row g-2 mb-3"></div>
 
       <h5 class="mb-3">Historial de movimientos</h5>
 
@@ -579,8 +606,11 @@
       </div>
 
     </div>
-    </div>
-    </div>
+  </div>
+
+</div>
+
+
 
 
 <!-- ⚙️ Pestaña de Configuración -->

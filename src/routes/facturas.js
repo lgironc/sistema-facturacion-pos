@@ -1,97 +1,202 @@
 const express = require('express');
 const router = express.Router();
-const { Cliente, Producto, Factura, FacturaDetalle, HistorialInventario } = require('../models');
+const { Cliente, Producto, Factura, FacturaDetalle, CuentaPorCobrar, MovimientoFinanciero, HistorialInventario } = require('../models');
 const PDFDocument = require('pdfkit');
-const { start } = require('repl');
 
 
 
+
+// POST /facturas  — versión estable sin transacciones y con precioUnitario
 router.post('/', async (req, res) => {
   try {
     const { clienteId, productos, tipoPago, efectivo = 0, abonoInicial = 0 } = req.body;
 
-    console.log('🧾 Datos recibidos:', { clienteId, tipoPago, efectivo, abonoInicial, productos });
-
-    if (!productos || !productos.length) {
-      return res.status(400).json({ error: 'No hay productos en la factura' });
+  // ⚠️ Regla: para crédito es obligatorio un cliente
+    if (tipoPago === 'credito' && !clienteId) {
+      return res.status(400).json({
+        error: 'Para ventas a crédito debes seleccionar un cliente (clienteId no puede ser null).'
+      });
     }
 
-    // Calcular total de la factura
-    const totalFactura = productos.reduce((sum, p) => {
-      const precio = parseFloat(p.precio || 0);
-      return sum + (p.cantidad * precio);
-    }, 0);
+    // 0) Logs de entrada
+    console.log('📥 POST /facturas body:', JSON.stringify(req.body, null, 2));
 
-    console.log('💰 Total calculado:', totalFactura);
+    // 1) Validaciones básicas
+    if (!Array.isArray(productos) || productos.length === 0) {
+      throw new Error('No hay productos en la factura (productos[])');
+    }
+    if (!['contado', 'credito'].includes(tipoPago)) {
+      throw new Error('tipoPago inválido (use "contado" o "credito")');
+    }
 
-    // Crear factura
-    const nuevaFactura = await Factura.create({
-      clienteId,
-      total: totalFactura,
-      tipoPago,
-      efectivo
-    });
-
-    // Crear detalles
+    // 2) Normalizar items (precioUnitario y cantidad); fallback a BD si falta precio
+    const items = [];
     for (const p of productos) {
-      await FacturaDetalle.create({
-        facturaId: nuevaFactura.id,
-        productoId: p.productoId,
-        cantidad: p.cantidad,
-        precio: p.precio
-      });
+      if (!p.productoId) throw new Error('Falta productoId en un item');
 
-      // Actualizar stock
       const prod = await Producto.findByPk(p.productoId);
-      if (prod) {
-        prod.stock -= p.cantidad;
-        await prod.save();
+      if (!prod) throw new Error(`Producto ${p.productoId} no encontrado`);
+
+      // Acepta precioUnitario o precio; si no viene, usa precioVenta de BD
+      const precioUnitario = Number(
+        p.precioUnitario ?? p.precio ?? prod.precioVenta
+      );
+
+      if (!Number.isFinite(precioUnitario) || precioUnitario < 0) {
+        throw new Error(`Precio inválido para ${prod.nombre}`);
       }
-    }
 
-    // Si es crédito
-    if (tipoPago === 'credito') {
-      const saldoPendiente = totalFactura - abonoInicial;
+      const cantidad = Number(p.cantidad || 1);
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        throw new Error(`Cantidad inválida para ${prod.nombre}`);
+      }
 
-      console.log('📘 Creando cuenta por cobrar con saldo:', saldoPendiente);
+      if (prod.stock != null && prod.stock < cantidad) {
+        throw new Error(`Stock insuficiente para ${prod.nombre} (disp: ${prod.stock})`);
+      }
 
-      await CuentaPorCobrar.create({
-        clienteId,
-        facturaId: nuevaFactura.id,
-        totalFactura,
-        saldoPendiente,
-        estado: saldoPendiente <= 0 ? 'pagado' : (abonoInicial > 0 ? 'parcial' : 'pendiente')
+      items.push({
+        productoId: prod.id,
+        nombre: prod.nombre,
+        cantidad,
+        precioUnitario,
+        stockInicial: prod.stock ?? 0
       });
-
-      if (abonoInicial > 0) {
-        await MovimientoFinanciero.create({
-          tipo: 'cobro_credito',
-          monto: abonoInicial,
-          descripcion: `Abono inicial a factura #${nuevaFactura.id}`,
-          facturaId: nuevaFactura.id
-        });
-      }
     }
 
-    res.json({ ok: true, facturaId: nuevaFactura.id });
+    // 3) Totales y reglas de pago
+    const total = Number(items.reduce((s, it) => s + it.cantidad * it.precioUnitario, 0).toFixed(2));
+    console.log('Total calculado:', total, 'tipoPago:', tipoPago, 'efectivo:', efectivo, 'abonoInicial:', abonoInicial);
+
+    if (tipoPago === 'contado') {
+      if (abonoInicial > 0) throw new Error('En contado no debe haber abono inicial');
+      if (!Number.isFinite(total) || total <= 0) throw new Error('Total inválido');
+      if (Number(efectivo) < total) throw new Error('Efectivo recibido menor al total');
+    } else {
+      if (abonoInicial < 0) throw new Error('Abono inicial inválido');
+      if (abonoInicial > total) throw new Error('Abono inicial no puede exceder el total');
+    }
+
+    // 4) Verifica que el modelo Factura tenga los campos usados
+    const colsFactura = Object.keys(Factura.rawAttributes || {});
+    console.log('🏷️ Factura columnas:', colsFactura);
+    if (!colsFactura.includes('total')) throw new Error('La tabla Factura no tiene columna "total"');
+    if (!colsFactura.includes('tipoPago')) console.warn('⚠️ Factura no tiene "tipoPago": se guardará sin ese campo');
+    if (!colsFactura.includes('efectivo')) console.warn('⚠️ Factura no tiene "efectivo": se guardará sin ese campo');
+
+    // 5) Crear factura (sólo inserta campos que existan en la tabla)
+const facturaData = {
+  clienteId: clienteId ?? null,
+  total: Number(total)
+};
+if (colsFactura.includes('tipoPago')) facturaData.tipoPago = tipoPago;
+if (colsFactura.includes('efectivo')) facturaData.efectivo = Number(efectivo);
+
+console.log('🧾 facturaData que se insertará:', facturaData, 'typeof total:', typeof facturaData.total);
+
+let nuevaFactura;
+try {
+  nuevaFactura = await Factura.create(facturaData);
+  console.log('✅ Factura creada ID:', nuevaFactura.id, 'total guardado:', nuevaFactura.total);
+} catch (e) {
+  console.error('❌ Sequelize al crear Factura:', {
+    mensaje: e.message,
+    fields: e?.errors?.map(er => ({ path: er.path, value: er.value }))
+  });
+  throw e; // re-lanzamos para que el catch general responda 500
+}
+
+
+// 6) Crear detalles (tu tabla usa 'precioUnitario') y descontar stock + historial
+for (const it of items) {
+  await FacturaDetalle.create({
+    facturaId: nuevaFactura.id,
+    productoId: it.productoId,
+    cantidad: it.cantidad,
+    precioUnitario: Number(it.precioUnitario)
+  });
+
+  // Descontar stock de forma atómica a nivel SQL
+  await Producto.increment(
+    { stock: -it.cantidad },
+    { where: { id: it.productoId } }
+  );
+
+  // 👇 Registrar movimiento en HistorialInventario como VENTA
+  if (HistorialInventario) {
+    const stockFinal = (it.stockInicial ?? 0) - it.cantidad;
+
+    await HistorialInventario.create({
+      productoId: it.productoId,
+      tipo: 'venta',                          // 👈 importante: coincide con ENUM('entrada','venta')
+      cantidad: it.cantidad,
+      stockFinal,
+      descripcion: `Venta factura #${nuevaFactura.id}`
+    });
+  }
+}
+
+
+// 7) Finanzas / Cuentas por Cobrar
+// --------------------------------
+if (tipoPago === 'contado') {
+  // 💰 Venta de contado: registra ingreso de efectivo
+  if (MovimientoFinanciero) {
+    await MovimientoFinanciero.create({
+      facturaId: nuevaFactura.id,
+      tipo: 'ingreso',
+      origen: 'venta_contado',         // 👈 así aparece en la pestaña Ingresos y Egresos
+      metodo: 'Efectivo',
+      monto: total,
+      descripcion: `Venta contado factura #${nuevaFactura.id}`
+    });
+  }
+
+} else {
+  // 💳 Venta a crédito: crear cuenta por cobrar
+  const saldoPendiente = Number((total - (abonoInicial || 0)).toFixed(2));
+
+  if (CuentaPorCobrar) {
+    await CuentaPorCobrar.create({
+      clienteId: clienteId ?? null,
+      facturaId: nuevaFactura.id,
+      totalFactura: total,
+      saldoPendiente,
+      estado:
+        saldoPendiente <= 0
+          ? 'pagado'
+          : abonoInicial > 0
+          ? 'parcial'
+          : 'pendiente'
+    });
+  }
+
+  // 💵 Solo si hay abono inicial se registra ingreso
+  if (abonoInicial > 0 && MovimientoFinanciero) {
+    await MovimientoFinanciero.create({
+      facturaId: nuevaFactura.id,
+      tipo: 'ingreso',
+      origen: 'abono_credito',      // 👈 coincide con la opción del select del frontend
+      monto: abonoInicial,
+      descripcion: `Abono inicial a factura #${nuevaFactura.id}`,
+      facturaId: nuevaFactura.id
+    });
+  }
+}
+
+
+// 8) Respuesta OK
+return res.status(201).json({ ok: true, facturaId: nuevaFactura.id, total });
 
   } catch (error) {
     console.error('❌ Error creando factura:', error);
-    res.status(500).json({ error: 'Error interno al crear factura', detalle: error.message });
+    return res.status(500).json({
+      error: 'Error interno al crear factura',
+      detalle: error.message
+    });
   }
 });
 
-
-
-
-
-    // ✅ Guardar respaldo en FacturaBackup
-   // const { FacturaBackup } = require('../models');
- // facturaOriginalId: factura.id,
-  //total: factura.total,
-  //fecha: factura.createdAt, // o factura.fecha si lo tienes
-  //clienteId: factura.clienteId
- // });
 
 
 // ===========================
@@ -136,25 +241,15 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
     const factura = await Factura.findByPk(id, {
-      include: [
-        {
-          model: Cliente,
-          as: 'Cliente', 
-          attributes: ['id', 'nombre', 'telefono', 'direccion']
-        },
-        {
-          model: FacturaDetalle,
-          as: 'FacturaDetalles',
-          include: [
-            {
-              model: Producto,
-              as: 'Producto', // ✅ Alias correcto
-              attributes: ['id', 'nombre', 'precioVenta']
-            }
-          ]
-        }
-      ]
-    });
+  include: [
+    { model: Cliente, as: 'Cliente', attributes: ['id','nombre','telefono','direccion'] },
+    { model: FacturaDetalle, as: 'FacturaDetalles',
+      include: [{ model: Producto, as: 'Producto', attributes: ['id','nombre','precioVenta'] }]
+    },
+    { model: CuentaPorCobrar, as: 'CuentaPorCobrar' } // 👈 agrega esto
+  ]
+});
+
 
     if (!factura) {
       return res.status(404).json({ error: 'Factura no encontrada' });
@@ -185,13 +280,11 @@ router.get('/:id/pdf', async (req, res) => {
           model: FacturaDetalle,
           as: 'FacturaDetalles',
           include: [
-            {
-              model: Producto,
-              as: 'Producto',
-              attributes: ['nombre', 'precioVenta']
-            }
+            { model: Producto, as: 'Producto', attributes: ['nombre', 'precioVenta'] }
           ]
-        }
+        },
+        // 👇 CuentaPorCobrar va AQUÍ, no dentro de FacturaDetalles
+        { model: CuentaPorCobrar, as: 'CuentaPorCobrar' }
       ]
     });
 
@@ -217,7 +310,7 @@ router.get('/:id/pdf', async (req, res) => {
 // =========================
 // 🧾 Crear documento PDF
 // =========================
-const PDFDocument = require('pdfkit');
+
 const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
 
 // 🖨 Guardarlo en archivo físico
@@ -238,7 +331,7 @@ doc.moveDown(1);
 // ========================
 doc.fontSize(12)
   .text(`Factura No: ${numeroFactura}`, 50, doc.y, { continued: true })
-  .text(`Fecha: ${new Date(factura.fecha).toLocaleDateString()} ${new Date(factura.fecha).toLocaleTimeString()}`, { align: 'right' });
+  .text(`Fecha: ${new Date(factura.createdAt).toLocaleDateString()} ${new Date(factura.createdAt).toLocaleTimeString()}`, { align: 'right' });
 
 doc.moveDown(0.5);
 doc.text('Cliente:', { underline: true });
@@ -261,12 +354,13 @@ doc.moveDown(0.5);
 doc.font('Helvetica');
 
 factura.FacturaDetalles.forEach(detalle => {
-  const subtotal = detalle.cantidad * detalle.Producto?.precioVenta;
+  const precioDet = Number((detalle.precioUnitario ?? detalle.precio ?? detalle.Producto?.precioVenta) || 0);
+  const subtotal = Number((detalle.cantidad * precioDet).toFixed(2));
   const y = doc.y;
 
   doc.text(detalle.cantidad.toString(), 50, y);
   doc.text(detalle.Producto?.nombre || 'N/D', 100, y, { width: 230 });
-  doc.text(`Q${detalle.Producto?.precioVenta.toFixed(2)}`, 340, y, { width: 80, align: 'right' });
+  doc.text(`Q${precioDet.toFixed(2)}`, 340, y, { width: 80, align: 'right' });
   doc.text(`Q${subtotal.toFixed(2)}`, 440, y, { width: 80, align: 'right' });
 
   doc.moveDown(0.8);
@@ -279,7 +373,7 @@ doc.moveDown(1);
 // TOTAL (NEGRITA A LA DERECHA)
 // ========================
 doc.font('Helvetica-Bold').fontSize(14)
-  .text(`TOTAL: Q${factura.total.toFixed(2)}`, 340, doc.y, { width: 180, align: 'right' });
+  .text(`TOTAL: Q${Number(factura.total || 0).toFixed(2)}`, 340, doc.y, { width: 180, align: 'right' });
 
 // ========================
 // INFORMACIÓN DE PAGO
@@ -291,14 +385,14 @@ const tipoPago = factura.tipoPago || 'contado';
 let pagoTexto = '';
 
 if (tipoPago === 'contado') {
-  const efectivo = parseFloat(factura.efectivo || 0);
-  const cambio = Math.max(efectivo - factura.total, 0);
-  pagoTexto = `💵 Tipo de pago: Contado\nEfectivo recibido: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`;
+  const efectivo = Number(factura.efectivo || 0);
+  const cambio = Math.max(efectivo - Number(factura.total), 0);
+  pagoTexto = ` Tipo de pago: Contado\nEfectivo recibido: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`;
 } else if (tipoPago === 'credito') {
-  const cuenta = factura.CuentaPorCobrar || {};
-  const abono = factura.total - (cuenta.saldoPendiente || 0);
-  const saldo = cuenta.saldoPendiente ?? factura.total;
-  pagoTexto = `💳 Tipo de pago: Crédito\nAbono inicial: Q${abono.toFixed(2)}\nSaldo pendiente: Q${saldo.toFixed(2)}`;
+  const cxc = factura.CuentaPorCobrar || {};
+  const saldo = Number(cxc.saldoPendiente ?? factura.total);
+  const abono = Number(factura.total) - saldo;
+  pagoTexto = `Tipo de pago: Crédito\nAbono inicial: Q${abono.toFixed(2)}\nSaldo pendiente: Q${saldo.toFixed(2)}`;
 } else {
   pagoTexto = `Tipo de pago: ${tipoPago}`;
 }
@@ -359,7 +453,6 @@ router.get('/test/todas', async (req, res) => {
 });
 
 
-// ===========================
-// EXPORTAR RUTAS
-// ===========================
+global.__FACTURAS_ROUTER__ = router;
 module.exports = router;
+
