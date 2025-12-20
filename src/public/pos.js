@@ -1372,14 +1372,29 @@ function imprimirRuta() {
 // 🚚 DEVOLUCIÓN DE RUTA
 // =========================================
 
-// Cargar lista de rutas en el <select>
 async function cargarRutasDevolucion() {
   const select = document.getElementById('selectRutaDevolucion');
   if (!select) return;
 
   try {
-    const res = await fetch(`${BASE}/rutas`);
-    const rutas = await res.json();
+    const res = await fetch(`${BASE}/rutas`, {
+      headers: { 'Accept': 'application/json' }
+    });
+
+    const text = await res.text(); // 👈 leer como texto primero
+
+    if (!res.ok) {
+      console.error('GET /rutas falló:', res.status, text);
+      return;
+    }
+
+    let rutas;
+    try {
+      rutas = JSON.parse(text);
+    } catch (e) {
+      console.error('GET /rutas NO devolvió JSON. Respuesta:', text);
+      return;
+    }
 
     select.innerHTML = '<option value="">-- Seleccione una ruta --</option>';
 
@@ -1390,10 +1405,12 @@ async function cargarRutasDevolucion() {
       opt.textContent = `Ruta #${r.id} - ${fechaStr} - ${r.piloto || ''}`;
       select.appendChild(opt);
     });
+
   } catch (err) {
     console.error('Error cargando rutas:', err);
   }
 }
+
 
 // Cargar detalles de la ruta seleccionada
 async function cargarDetallesRutaDevolucion() {

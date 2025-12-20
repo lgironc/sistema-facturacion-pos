@@ -1,17 +1,10 @@
-// src/routes/rutas.js
 const express = require('express');
 const PDFDocument = require('pdfkit');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const sequelize = require('../database');
 
-
-
-// 🚦 Ruta de prueba
-router.get('/ping', (req, res) => {
-  res.send('Ruta OK');
-});
-
-// ... (el resto de tu código POST / y GET /:id/pdf)
-module.exports = router;
 
 
 const {
@@ -20,14 +13,27 @@ const {
   Producto
 } = require('../models');
 
-// Solo para confirmar que el router está montado:
+// 🚦 Ruta de prueba
 router.get('/ping', (req, res) => {
   res.json({ ok: true, msg: 'Router de rutas funcionando' });
 });
 
+router.get('/', async (req, res) => {
+  try {
+    const rutas = await Ruta.findAll({
+      order: [['fecha', 'DESC'], ['id', 'DESC']]
+    });
+    return res.json(rutas);
+  } catch (error) {
+    console.error('Error en GET /rutas:', error);
+    return res.status(500).json({ error: 'Error obteniendo rutas' });
+  }
+});
+
+
+
 // ======================================
 // POST /rutas  → Crear salida de camión
-// (realmente es POST /rutas/ porque lo montamos con app.use('/rutas', router))
 // ======================================
 router.post('/', async (req, res) => {
   try {
@@ -37,7 +43,6 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Datos incompletos para crear ruta' });
     }
 
-    // Crear encabezado de la ruta
     const ruta = await Ruta.create({
       fecha,
       piloto,
@@ -45,7 +50,6 @@ router.post('/', async (req, res) => {
       observaciones
     });
 
-    // Crear detalles + descontar stock
     for (const p of productos) {
       const prod = await Producto.findByPk(p.productoId);
       if (!prod) continue;
@@ -57,24 +61,126 @@ router.post('/', async (req, res) => {
         cantidadDevuelta: 0
       });
 
-      // Descontar del stock lo que salió a ruta
       await prod.update({
         stock: prod.stock - p.cantidadSalida
       });
     }
 
-    return res.json({ ok: true, rutaId: ruta.id });
+    res.json({ ok: true, rutaId: ruta.id });
 
   } catch (error) {
     console.error('Error en POST /rutas:', error);
-    return res.status(500).json({ error: 'Error creando la ruta' });
+    res.status(500).json({ error: 'Error creando la ruta' });
   }
 });
 
+
 // =======================================================
-// GET /rutas/:id/pdf  → Generar PDF de la hoja de la ruta
+// GET /rutas/:id/pdf  → Generar y GUARDAR PDF de la ruta
 // =======================================================
 router.get('/:id/pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const ruta = await Ruta.findByPk(id, {
+  include: [
+    {
+      model: RutaDetalle,
+      as: 'DetallesRuta',
+      include: [
+        { model: Producto, as: 'ProductoRuta' }
+      ]
+    }
+  ]
+});
+
+
+
+    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
+
+    const rutasDir = path.join(__dirname, '..', '..', 'rutasPDF');
+    if (!fs.existsSync(rutasDir)) fs.mkdirSync(rutasDir, { recursive: true });
+
+    const filePath = path.join(rutasDir, `Ruta_${id}.pdf`);
+
+    const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+    const writeStream = fs.createWriteStream(filePath);
+    doc.pipe(writeStream);
+
+    doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(14).text('HOJA DE RUTA', { align: 'center' });
+    doc.moveDown(1);
+
+    const fechaRuta = ruta.fecha ? new Date(ruta.fecha).toLocaleDateString() : '';
+    doc.fontSize(11);
+    doc.text(`Ruta No: ${id}`);
+    doc.text(`Fecha: ${fechaRuta}`);
+    doc.text(`Piloto: ${ruta.piloto || ''}`);
+    if (ruta.placa) doc.text(`Placa: ${ruta.placa}`);
+    if (ruta.licencia) doc.text(`Licencia: ${ruta.licencia}`);
+    if (ruta.condicion) doc.text(`Condición: ${ruta.condicion}`);
+    if (ruta.nombre) doc.text(`Nombre: ${ruta.nombre}`);
+    if (ruta.direccion) doc.text(`Dirección: ${ruta.direccion}`);
+    doc.moveDown(1);
+
+    doc.font('Helvetica-Bold');
+    doc.text('CANT', 50);
+    doc.text('PRODUCTO', 100);
+    doc.text('P. UNIT', 360, undefined, { width: 80, align: 'right' });
+    doc.text('TOTAL', 450, undefined, { width: 80, align: 'right' });
+
+    doc.moveDown(0.3).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(0.5);
+    doc.font('Helvetica');
+
+    let totalGeneral = 0;
+
+    const detalles = ruta.DetallesRuta || [];
+    detalles.forEach(det => {
+      const prod = det.ProductoRuta;
+      const cant = Number(det.cantidadSalida || 0);
+      const precio = Number(prod?.precioVenta || 0);
+      const nombre = prod?.nombre || 'N/D';
+      const subtotal = cant * precio;
+
+      totalGeneral += subtotal;
+
+      const y = doc.y;
+      doc.text(String(cant), 50, y);
+      doc.text(nombre, 100, y, { width: 240 });
+      doc.text(`Q${precio.toFixed(2)}`, 360, y, { width: 80, align: 'right' });
+      doc.text(`Q${subtotal.toFixed(2)}`, 450, y, { width: 80, align: 'right' });
+      doc.moveDown(0.8);
+    });
+
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(1);
+
+    doc.font('Helvetica-Bold').fontSize(14)
+      .text(`TOTAL: Q${totalGeneral.toFixed(2)}`, 350, doc.y, { width: 200, align: 'right' });
+
+    doc.end();
+
+    writeStream.on('finish', () => {
+      return res.sendFile(filePath);
+
+    });
+
+  } catch (error) {
+    console.error('Error generando PDF de ruta:', error);
+    return res.status(500).json({
+      error: 'Error generando PDF de la ruta',
+      message: error.message
+    });
+  }
+});
+
+
+// ======================================
+// GET /rutas/:id  → Detalle con productos (para devolución)
+// ======================================
+router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -84,124 +190,83 @@ router.get('/:id/pdf', async (req, res) => {
           model: RutaDetalle,
           as: 'DetallesRuta',
           include: [
-            {
-              model: Producto,
-              as: 'ProductoRuta'
-            }
+            { model: Producto, as: 'ProductoRuta' }
           ]
         }
       ]
     });
 
+    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
+
+    return res.json(ruta);
+  } catch (error) {
+    console.error('Error en GET /rutas/:id:', error);
+    return res.status(500).json({ error: 'Error cargando detalles de la ruta' });
+  }
+});
+
+
+// =======================
+// DEVOLUCIÓN DE RUTA
+// =======================
+// Espera body: { detalles: [ { rutaDetalleId, cantidadDevuelta } ] }
+router.post('/:id/devolucion', async (req, res) => {
+  const { id } = req.params;
+  const { detalles } = req.body;
+
+  if (!Array.isArray(detalles) || detalles.length === 0) {
+    return res.status(400).json({ error: 'No se enviaron devoluciones' });
+  }
+
+  const t = await sequelize.transaction();
+
+  try {
+    const ruta = await Ruta.findByPk(id, { transaction: t });
     if (!ruta) {
+      await t.rollback();
       return res.status(404).json({ error: 'Ruta no encontrada' });
     }
 
-    // PDF headers
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Ruta_${id}.pdf"`);
+    for (const d of detalles) {
+      const rutaDet = await RutaDetalle.findByPk(d.rutaDetalleId, { transaction: t });
+      if (!rutaDet) continue;
 
-    const doc = new PDFDocument({ margin: 40, size: 'LETTER' });
-    doc.pipe(res);
+      // ✅ asegura que pertenece a esta ruta
+      if (Number(rutaDet.rutaId) !== Number(id)) continue;
 
-    // HEADER
-    doc.fontSize(16).text('SISTEMA DE FACTURACIÓN POS', { align: 'center' });
-    doc.fontSize(14).text('HOJA DE RUTA CAMIÓN', { align: 'center' });
+      const prod = await Producto.findByPk(rutaDet.productoId, { transaction: t });
+      if (!prod) continue;
 
-    doc.moveDown(1);
+      const salida = Number(rutaDet.cantidadSalida || 0);
+      const devueltaActual = Number(rutaDet.cantidadDevuelta || 0);
+      let nuevaDevuelta = Number(d.cantidadDevuelta || 0);
 
-    const fechaStr = ruta.fecha
-      ? new Date(ruta.fecha).toLocaleDateString()
-      : '';
+      if (nuevaDevuelta < 0) nuevaDevuelta = 0;
+      if (nuevaDevuelta > salida) nuevaDevuelta = salida;
 
-    doc.fontSize(10);
-    doc.text(`FECHA:       ${fechaStr}`);
-    doc.text(`NOMBRE:      ${ruta.nombre || ''}`);
-    doc.text(`DIRECCIÓN:   ${ruta.direccion || ''}`);
-    doc.text(`PILOTO:      ${ruta.piloto || ''}`);
-    doc.text(`LICENCIA:    ${ruta.licencia || ''}`);
-    doc.text(`CONDICIÓN:   ${ruta.condicion || ''}`);
-    doc.text(`PLACA:       ${ruta.placa || ''}`);
+      const delta = nuevaDevuelta - devueltaActual;
 
-    doc.moveDown(1.2);
+      rutaDet.cantidadDevuelta = nuevaDevuelta;
+      await rutaDet.save({ transaction: t });
 
-    // ---------------------------
-    //    TABLA REORDENADA
-    // ---------------------------
-    const startY = doc.y;
-    const rowHeight = 18;
-
-    const colX = {
-      cant: 40,
-      producto: 100,
-      precio: 360,
-      total: 430,
-      dev: 500
-    };
-
-    // Encabezados
-    doc.font('Helvetica-Bold').fontSize(10);
-
-    doc.text('Cant.',     colX.cant,     startY, { width: 40, align: 'right' });
-    doc.text('Producto',  colX.producto, startY);
-    doc.text('Precio',    colX.precio,   startY, { width: 60, align: 'right' });
-    doc.text('Total',     colX.total,    startY, { width: 60, align: 'right' });
-    doc.text('Dev.',      colX.dev,      startY, { width: 40, align: 'right' });
-
-    // Líneas
-    doc.moveTo(40, startY - 3).lineTo(550, startY - 3).stroke();
-    doc.moveTo(40, startY + rowHeight - 5).lineTo(550, startY + rowHeight - 5).stroke();
-
-    // Filas
-    doc.font('Helvetica');
-    let y = startY + rowHeight;
-
-    let totalCant = 0;
-    let totalDev = 0;
-    let totalQ = 0;
-
-    (ruta.DetallesRuta || []).forEach(det => {
-      const nombre   = det.ProductoRuta?.nombre || '';
-      const cant     = det.cantidadSalida || 0;
-      const dev      = det.cantidadDevuelta || 0;
-      const precio   = Number(det.ProductoRuta?.precioVenta || 0);
-      const total    = cant * precio;
-
-      totalCant += cant;
-      totalDev  += dev;
-      totalQ    += total;
-
-      if (y > doc.page.height - 60) {
-        doc.addPage();
-        y = 50;
+      if (delta !== 0) {
+        prod.stock = Number(prod.stock || 0) + delta;
+        await prod.save({ transaction: t });
       }
+    }
 
-      doc.text(String(cant),     colX.cant,     y, { width: 40, align: 'right' });
-      doc.text(nombre,           colX.producto, y, { width: 250 });
-      doc.text(precio.toFixed(2),colX.precio,   y, { width: 60, align: 'right' });
-      doc.text(total.toFixed(2), colX.total,    y, { width: 60, align: 'right' });
-      doc.text(String(dev),      colX.dev,      y, { width: 40, align: 'right' });
+    await t.commit();
+    return res.json({ ok: true });
 
-      y += rowHeight;
-    });
-
-    // Línea final
-    doc.moveTo(40, y - 5).lineTo(550, y - 5).stroke();
-
-    // Totales
-    doc.font('Helvetica-Bold');
-
-    doc.text('Totales:',       colX.producto - 60, y);
-    doc.text(String(totalCant), colX.cant,   y, { width: 40, align: 'right' });
-    doc.text(totalQ.toFixed(2), colX.total,  y, { width: 60, align: 'right' });
-    doc.text(String(totalDev),  colX.dev,    y, { width: 40, align: 'right' });
-
-    doc.end();
   } catch (error) {
-    console.error('Error en GET /rutas/:id/pdf:', error);
-    return res.status(500).json({ error: 'Error generando PDF de la ruta' });
+    console.error('Error en POST /rutas/:id/devolucion:', error);
+    await t.rollback();
+    return res.status(500).json({ error: 'Error guardando devolución de ruta', message: error.message });
   }
 });
+
+
+
 
 
 module.exports = router;

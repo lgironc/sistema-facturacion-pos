@@ -14,62 +14,106 @@ let win;
 // 🔹 Helpers para manejo de PDF
 // ==============================
 
-// Carpeta donde se guardarán las facturas (dentro del proyecto)
-function getFacturasFolder() {
-  // 📌 Carpeta "facturasPDF" dentro del proyecto actual
-  const folderPath = path.join(__dirname, 'facturasPDF');
 
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-    console.log('📂 Carpeta creada:', folderPath);
+function ensureFolder(folder) {
+  if (!fs.existsSync(folder)) {
+    fs.mkdirSync(folder, { recursive: true });
+    console.log('📂 Carpeta creada:', folder);
   }
-
-  return folderPath;
 }
+
+ensureFolder(path.join(__dirname, 'facturasPDF'));
+ensureFolder(path.join(__dirname, 'rutasPDF'));
+ensureFolder(path.join(__dirname, 'cierresPDF'));
+
+
+
 
 // Devuelve la ruta de archivo en disco a partir de la URL /facturas/:id/pdf
 function getPdfPathFromUrl(originalUrl) {
-  const folderPath = getFacturasFolder();
-
-  // Buscar ID de factura en la URL
-  const match = originalUrl.match(/\/facturas\/(\d+)\/pdf/);
+  // FACTURAS
+  let match = originalUrl.match(/\/facturas\/(\d+)\/pdf/);
   if (match) {
     const facturaId = match[1];
     const numeroFactura = `INT-${String(facturaId).padStart(4, '0')}`;
-    return path.join(folderPath, `Factura_${numeroFactura}.pdf`);
+    return path.join(__dirname, 'facturasPDF', `Factura_${numeroFactura}.pdf`);
   }
 
-  // Si no es una factura (por ejemplo un cierre de caja), nombre genérico
-  return path.join(folderPath, `Reporte_${Date.now()}.pdf`);
+  // RUTAS
+  match = originalUrl.match(/\/rutas\/(\d+)\/pdf/);
+  if (match) {
+    const rutaId = match[1];
+    return path.join(__dirname, 'rutasPDF', `Ruta_${rutaId}.pdf`);
+  }
+
+  // CIERRES
+  match = originalUrl.match(/\/cierres\/(\d+)\/pdf/);
+  if (match) {
+    const cierreId = match[1];
+    return path.join(__dirname, 'cierresPDF', `Cierre_${cierreId}.pdf`);
+  }
+
+  // Fallback
+  return path.join(__dirname, 'facturasPDF', `Reporte_${Date.now()}.pdf`);
 }
 
 // Descarga el PDF SOLO si no existe todavía, y devuelve la ruta en disco
 async function descargarPdfSiNoExiste(url) {
   console.log('📌 descargarPdfSiNoExiste URL recibida:', url);
 
-  // 1. Si es ya una ruta local y existe → no hacemos nada
-  if (!url.startsWith('http') && fs.existsSync(url)) {
-    console.log('📄 Ya es un archivo local existente:', url);
-    return url;
-  }
-
-  // 2. Para construir nombre de archivo usamos la URL "lógica" (relativa)
+  // Normalizamos URL lógica
   const urlLogica = url.startsWith('http')
-    ? new URL(url).pathname // ej. /facturas/4/pdf
-    : url;                  // ej. /facturas/4/pdf
+    ? new URL(url).pathname
+    : url;
 
+  // Ruta física donde debería estar el PDF
   const filePath = getPdfPathFromUrl(urlLogica);
 
-  // Si el archivo ya está descargado, lo reutilizamos
+  // ✅ Si el PDF ya existe localmente, lo usamos
   if (fs.existsSync(filePath)) {
-    console.log('♻️ PDF ya existe, no se vuelve a descargar:', filePath);
+    console.log('📄 PDF local encontrado:', filePath);
     return filePath;
   }
 
-  // 3. Construimos la URL absoluta para hacer la petición HTTP
+  // 🚚 RUTAS: pedir al backend que lo genere
+if (urlLogica.startsWith('/rutas/')) {
+  let fullUrl = `http://localhost:4000${urlLogica}`;
+
+  console.log('[MAIN] Generando PDF de ruta desde:', fullUrl);
+
+  await new Promise((resolve, reject) => {
+    http.get(fullUrl, (response) => {
+      if (response.statusCode !== 200) {
+  let body = '';
+  response.on('data', chunk => body += chunk.toString());
+  response.on('end', () => {
+    reject(new Error(`Error generando PDF de ruta: ${response.statusCode} - ${body}`));
+  });
+  return;
+}
+
+
+      // No usamos el stream, solo esperamos a que el backend lo genere
+      response.on('data', () => {});
+      response.on('end', resolve);
+    }).on('error', reject);
+  });
+
+  // ⏳ Esperar un momento a que se escriba en disco
+  await new Promise(res => setTimeout(res, 300));
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error('El backend no creó el PDF de la ruta');
+  }
+
+  return filePath;
+}
+
+
+  // 🌐 FACTURAS / CIERRES → descargar por HTTP
   let fullUrl = url;
   if (!fullUrl.startsWith('http')) {
-    fullUrl = `http://localhost:4000${url}`;
+    fullUrl = `http://localhost:4000${urlLogica}`;
   }
 
   console.log('[MAIN] Descargando PDF desde:', fullUrl);
@@ -94,13 +138,12 @@ async function descargarPdfSiNoExiste(url) {
           resolve();
         });
       })
-      .on('error', (err) => {
-        reject(err);
-      });
+      .on('error', reject);
   });
 
   return filePath;
 }
+
 
 // ==============================
 // IPC: PDF
@@ -184,3 +227,4 @@ app.on('window-all-closed', () => {
   if (backendProcess) backendProcess.kill();
   app.quit();
 });
+
