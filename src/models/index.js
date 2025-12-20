@@ -1,21 +1,25 @@
-// models/index.js
-const Proveedor = require('./Proveedor');
-const Producto = require('./Producto');
-const Compra = require('./Compra');
-const CompraDetalle = require('./CompraDetalle');
-const Cliente = require('./Cliente');
-const Factura = require('./Factura');
-const FacturaDetalle = require('./FacturaDetalle');
-const FacturaBackup = require('./FacturaBackup');
-const HistorialInventario = require('./HistorialInventario');
+// src/models/index.js
+const Proveedor          = require('./Proveedor');
+const Producto           = require('./Producto');
+const Compra             = require('./Compra');
+const CompraDetalle      = require('./CompraDetalle');
+const Cliente            = require('./Cliente');
+const Factura            = require('./Factura');
+const FacturaDetalle     = require('./FacturaDetalle');
+const FacturaBackup      = require('./FacturaBackup');
+const HistorialInventario= require('./HistorialInventario');
 const MovimientoFinanciero = require('./MovimientoFinanciero');
-const CuentaPorCobrar = require('./CuentaPorCobrar');
+const CuentaPorCobrar    = require('./CuentaPorCobrar');
+
+// 🔹 NUEVOS MODELOS
+const Ruta               = require('./Ruta');
+const RutaDetalle        = require('./RutaDetalle');
 
 // ====================
 // RELACIONES COMPRAS
 // ====================
 Compra.belongsTo(Proveedor, { foreignKey: 'proveedorId', as: 'Proveedor' });
-Proveedor.hasMany(Compra, { foreignKey: 'proveedorId', as: 'Compras' });
+Proveedor.hasMany(Compra,   { foreignKey: 'proveedorId', as: 'Compras' });
 
 CompraDetalle.belongsTo(Compra,   { foreignKey: 'compraId',   as: 'Compra' });
 Compra.hasMany(CompraDetalle,     { foreignKey: 'compraId',   as: 'CompraDetalles' });
@@ -44,14 +48,45 @@ Producto.hasMany(HistorialInventario,   { foreignKey: 'productoId', as: 'Histori
 // ====================
 // CUENTAS POR COBRAR / FINANZAS
 // ====================
-Cliente.hasMany(CuentaPorCobrar,                 { foreignKey: 'clienteId' });
-CuentaPorCobrar.belongsTo(Cliente,               { foreignKey: 'clienteId' });
+Cliente.hasMany(CuentaPorCobrar,          { foreignKey: 'clienteId' });
+CuentaPorCobrar.belongsTo(Cliente,        { foreignKey: 'clienteId' });
 
-Factura.hasOne(CuentaPorCobrar,                  { foreignKey: 'facturaId', as: 'CuentaPorCobrar' });
-CuentaPorCobrar.belongsTo(Factura,               { foreignKey: 'facturaId' });
+Factura.hasOne(CuentaPorCobrar,           { foreignKey: 'facturaId', as: 'CuentaPorCobrar' });
+CuentaPorCobrar.belongsTo(Factura,        { foreignKey: 'facturaId' });
 
-MovimientoFinanciero.belongsTo(Factura,         { foreignKey: 'facturaId', as: 'Factura' });
-Factura.hasMany(MovimientoFinanciero,            { foreignKey: 'facturaId', as: 'Movimientos' });
+MovimientoFinanciero.belongsTo(Factura,   { foreignKey: 'facturaId', as: 'Factura' });
+Factura.hasMany(MovimientoFinanciero,     { foreignKey: 'facturaId', as: 'Movimientos' });
+
+// ====================
+// RUTAS (CAMIÓN)
+// ====================
+
+// ====================
+// RUTAS (CAMIÓN)
+// ====================
+
+// Una ruta tiene muchos detalles (productos que salen en la hoja)
+Ruta.hasMany(RutaDetalle, {
+  foreignKey: 'rutaId',
+  as: 'DetallesRuta'         // lista de filas de la hoja
+});
+
+RutaDetalle.belongsTo(Ruta, {
+  foreignKey: 'rutaId',
+  as: 'RutaCabecera'         // cabecera de la ruta
+});
+
+// Un producto puede aparecer en muchas rutas
+Producto.hasMany(RutaDetalle, {
+  foreignKey: 'productoId',
+  as: 'RutasDetalle'         // todas las veces que salió en rutas
+});
+
+RutaDetalle.belongsTo(Producto, {
+  foreignKey: 'productoId',
+  as: 'ProductoRuta'         // 👈 ALIAS NUEVO, NO "Producto"
+});
+
 
 // ✅ Exportar TODOS los modelos
 module.exports = {
@@ -65,5 +100,7 @@ module.exports = {
   FacturaBackup,
   HistorialInventario,
   MovimientoFinanciero,
-  CuentaPorCobrar
+  CuentaPorCobrar,
+  Ruta,            // 👈 nuevo
+  RutaDetalle      // 👈 nuevo
 };

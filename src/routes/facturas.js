@@ -297,15 +297,18 @@ router.get('/:id/pdf', async (req, res) => {
     // =========================
     // 📁 Verificar carpeta destino
     // =========================
-    const fs = require('fs');
-    const path = require('path');
-    const dirPath = path.join(__dirname, '../../facturas_pos');
+   const path = require('path');
+const fs = require('fs');
 
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
+// Usar la misma carpeta que Electron: facturasPDF en la raíz del proyecto
+const facturasDir = path.join(__dirname, '..', 'facturasPDF');
 
-    const filePath = path.join(dirPath, `${numeroFactura}.pdf`);
+if (!fs.existsSync(facturasDir)) {
+  fs.mkdirSync(facturasDir, { recursive: true });
+}
+
+
+const filePath = path.join(facturasDir, `Factura_${numeroFactura}.pdf`);
 
 // =========================
 // 🧾 Crear documento PDF

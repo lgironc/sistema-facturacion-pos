@@ -11,7 +11,11 @@ const state = {
   productos: [],
   carrito: [],
   clientes: [],
-  historial: []
+  historial: [], 
+  finanzas: [], 
+  movimientosFinancieros: [],
+  rutaActual: null,      // { id, detalles: [...] }
+  rutaDetalles: []       // tabla que editas en el front
 };
 
 const el = id => document.getElementById(id);
@@ -27,6 +31,7 @@ async function cargarProductos() {
     renderProductosPOS();
     renderProductosAdmin();
      llenarFiltroHistorialProductos();
+     renderProductosRuta(); // 👈 aquí
   } catch (e) {
     console.error('Error cargando productos:', e);
   }
@@ -142,21 +147,50 @@ function renderCarrito() {
     tr.innerHTML = `
       <td>${item.nombre}</td>
       <td class="text-end">
-        <input type="number" min="1" class="form-control form-control-sm small-input" value="${item.cantidad}">
+        <input type="number"
+               min="1"
+               class="form-control form-control-sm small-input input-cant"
+               value="${item.cantidad}">
       </td>
-      <td class="text-end">${formatoQ(item.precioVenta)}</td>
+      <td class="text-end">
+        <input type="number"
+               min="0"
+               step="0.01"
+               class="form-control form-control-sm small-input text-end input-precio"
+               value="${item.precioVenta}">
+      </td>
       <td class="text-end">${formatoQ(subtotal)}</td>
       <td class="text-end">
         <button class="btn btn-outline-danger btn-sm">×</button>
       </td>
     `;
 
-    tr.querySelector('input').addEventListener('change', e => {
-      state.carrito[i].cantidad = Math.max(1, parseInt(e.target.value));
+    const qtyInput   = tr.querySelector('.input-cant');
+    const priceInput = tr.querySelector('.input-precio');
+    const btnDelete  = tr.querySelector('button');
+
+    // 🔹 Cambiar cantidad
+    qtyInput.addEventListener('change', e => {
+      let nuevaCant = parseInt(e.target.value);
+      if (!Number.isFinite(nuevaCant) || nuevaCant <= 0) nuevaCant = 1;
+      state.carrito[i].cantidad = nuevaCant;
       renderCarrito();
     });
 
-    tr.querySelector('button').addEventListener('click', () => {
+    // 🔹 Cambiar precio unitario (descuento / precio especial)
+    priceInput.addEventListener('change', e => {
+      let nuevoPrecio = parseFloat(e.target.value);
+      if (!Number.isFinite(nuevoPrecio) || nuevoPrecio < 0) {
+        // si está mal, se regresa al valor anterior
+        e.target.value = item.precioVenta;
+        return;
+      }
+      state.carrito[i].precioVenta = nuevoPrecio;
+      renderCarrito();
+    });
+
+    // 🔹 Eliminar línea
+    btnDelete.addEventListener('click', () => {
       state.carrito.splice(i, 1);
       renderCarrito();
     });
@@ -166,6 +200,7 @@ function renderCarrito() {
 
   el('totalCell').textContent = formatoQ(total);
 }
+
 
 function mostrarToast(mensaje, tipo = 'info') {
   const toastContainer = document.getElementById('toastContainer');
@@ -300,6 +335,18 @@ async function facturar() {
         ? `Efectivo: Q${efectivo.toFixed(2)} | Cambio: Q${cambio.toFixed(2)}`
         : `Crédito procesado correctamente`}
     `;
+
+    // ✅ Guardar automáticamente el PDF en disco (sin abrirlo)
+    if (window.electronAPI && window.electronAPI.descargarPDF) {
+      window.electronAPI.descargarPDF(`/facturas/${facturaId}/pdf`)
+        .then(res => {
+          if (!res?.success) {
+            console.warn('No se pudo guardar automáticamente el PDF:', res?.error);
+          }
+        })
+        .catch(err => console.warn('Error guardando PDF automático:', err));
+    }
+
 
     // ✅ Limpiar carrito y campos
     state.carrito = [];
@@ -496,6 +543,20 @@ function abrirFacturaPDF(urlFactura) {
   } else {
     console.error('❌ electronAPI no está disponible.');
   }
+}
+
+function generarCierrePDF() {
+  const desde = document.getElementById('cierreDesde')?.value || '';
+  const hasta = document.getElementById('cierreHasta')?.value || '';
+
+  const params = new URLSearchParams();
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+
+  const url = `/finanzas/cierre/pdf${params.toString() ? `?${params.toString()}` : ''}`;
+
+  console.log('🧾 Generando cierre de caja con URL:', url);
+  abrirFacturaPDF(url);   // 👈 usa la misma lógica que para facturas
 }
 
 
@@ -864,58 +925,106 @@ async function verHistorialAbonos(facturaId) {
 // 💰 FINANZAS: INGRESOS / EGRESOS
 // =========================================
 
-async function cargarMovimientosFinancieros() {
+// 🔹 Devuelve los movimientos filtrados por tipo, rango de fechas y texto
+function obtenerMovimientosFiltrados() {
+  const filtroTipo   = document.getElementById('filtroTipoMov')?.value || 'todos';
+  const filtroTexto  = (document.getElementById('filtroBuscarMov')?.value || '').toLowerCase();
+  const desdeStr     = document.getElementById('filtroFechaDesde')?.value || '';
+  const hastaStr     = document.getElementById('filtroFechaHasta')?.value || '';
+
+  const desde = desdeStr ? new Date(desdeStr + 'T00:00:00') : null;
+  const hasta = hastaStr ? new Date(hastaStr + 'T23:59:59') : null;
+
+  return (state.movimientosFinancieros || []).filter(m => {
+    const fecha = new Date(m.createdAt);
+
+    // Tipo
+    if (filtroTipo === 'solo_ingresos' && m.tipo !== 'ingreso') return false;
+    if (filtroTipo === 'solo_egresos' && m.tipo !== 'egreso') return false;
+
+    // Rango de fechas
+    if (desde && fecha < desde) return false;
+    if (hasta && fecha > hasta) return false;
+
+    // Texto
+    if (filtroTexto) {
+      const texto = `${m.descripcion || ''} ${m.tipo || ''} ${m.monto || ''}`.toLowerCase();
+      if (!texto.includes(filtroTexto)) return false;
+    }
+
+    return true;
+  });
+}
+
+// 🔹 Pinta la tabla y el resumen usando los filtros actuales
+function renderMovimientosFinancieros() {
   const tbody = document.getElementById('finanzasBody');
-  const resumenDiv = document.getElementById('resumenFinanciero');
   if (!tbody) return;
 
-  tbody.innerHTML = `
-    <tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>
-  `;
+  const movimientosFiltrados = obtenerMovimientosFiltrados();
+
+  if (!movimientosFiltrados.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" class="text-center text-muted">
+          No hay movimientos que coincidan con los filtros
+        </td>
+      </tr>
+    `;
+    renderResumenFinanciero([]);
+    return;
+  }
+
+  tbody.innerHTML = movimientosFiltrados.map(m => {
+    const fecha = new Date(m.createdAt);
+    const textoFecha = fecha.toLocaleDateString() + ' ' + fecha.toLocaleTimeString();
+    const esIngreso = m.tipo === 'ingreso';
+    const signo = esIngreso ? '+' : '-';
+
+    return `
+      <tr>
+        <td>${esIngreso ? 'Ingreso' : 'Egreso'}</td>
+        <td class="text-end ${esIngreso ? 'text-success' : 'text-danger'}">
+          ${signo}Q${Number(m.monto || 0).toFixed(2)}
+        </td>
+        <td>${m.descripcion || m.origen || ''}</td>
+        <td class="text-end">${textoFecha}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Resumen solo con los filtrados
+  renderResumenFinanciero(movimientosFiltrados);
+}
+
+// 🔹 Carga desde el backend y guarda en state.movimientosFinancieros
+async function cargarMovimientosFinancieros() {
+  const tbody = document.getElementById('finanzasBody');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>
+    `;
+  }
 
   try {
     const res = await fetch(`${BASE}/finanzas`);
     const movimientos = await res.json();
 
-    if (!Array.isArray(movimientos) || movimientos.length === 0) {
-      tbody.innerHTML = `
-        <tr><td colspan="4" class="text-center text-muted">No hay movimientos registrados</td></tr>
-      `;
-      if (resumenDiv) resumenDiv.innerHTML = '';
-      return;
-    }
-
-    // 🔹 Render tabla
-    tbody.innerHTML = movimientos.map(m => {
-      const fecha = new Date(m.createdAt).toLocaleDateString() + ' ' +
-                    new Date(m.createdAt).toLocaleTimeString();
-      const esIngreso = m.tipo === 'ingreso';
-      const signo = esIngreso ? '+' : '-';
-
-      return `
-        <tr>
-          <td>${esIngreso ? 'Ingreso' : 'Egreso'}</td>
-          <td class="text-end ${esIngreso ? 'text-success' : 'text-danger'}">
-            ${signo}Q${Number(m.monto || 0).toFixed(2)}
-          </td>
-          <td>${m.descripcion || m.origen || ''}</td>
-          <td class="text-end">${fecha}</td>
-        </tr>
-      `;
-    }).join('');
-
-    // 🔹 Resumen arriba
-    renderResumenFinanciero(movimientos);
+    state.movimientosFinancieros = Array.isArray(movimientos) ? movimientos : [];
+    renderMovimientosFinancieros();   // 👈 ahora usamos esta función
 
   } catch (err) {
     console.error('Error cargando movimientos:', err);
-    tbody.innerHTML = `
-      <tr><td colspan="4" class="text-center text-danger">Error cargando movimientos</td></tr>
-    `;
-    if (resumenDiv) resumenDiv.innerHTML = '';
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr><td colspan="4" class="text-center text-danger">Error cargando movimientos</td></tr>
+      `;
+    }
+    renderResumenFinanciero([]);
   }
 }
 
+// 🔹 Resumen (ingresos, egresos y saldo)
 function renderResumenFinanciero(movimientos) {
   const resumenDiv = document.getElementById('resumenFinanciero');
   if (!resumenDiv) return;
@@ -923,7 +1032,7 @@ function renderResumenFinanciero(movimientos) {
   let totalIngresos = 0;
   let totalEgresos = 0;
 
-  movimientos.forEach(m => {
+  (movimientos || []).forEach(m => {
     const monto = Number(m.monto || 0);
     if (m.tipo === 'ingreso') totalIngresos += monto;
     else if (m.tipo === 'egreso') totalEgresos += monto;
@@ -944,6 +1053,7 @@ function renderResumenFinanciero(movimientos) {
   `;
 }
 
+// 🔹 Guardar movimiento manual (Farmacia, pago de luz, etc.)
 async function guardarMovimientoFinanciero() {
   const tipo = document.getElementById('movTipo')?.value;
   const monto = parseFloat(document.getElementById('movMonto')?.value || '0');
@@ -1077,6 +1187,334 @@ function llenarFiltroHistorialProductos() {
   });
 }
 
+// =========================================
+// 🚚 RUTAS - SALIDA DE CAMIÓN
+// =========================================
+
+let rutaActualId = null; // para saber cuál fue la última ruta (para imprimir)
+
+function renderProductosRuta() {
+  const tbody = document.getElementById('rutasProductosBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+
+  state.productos.forEach(p => {
+    if (p.activo === false) return;
+
+    const precio = Number(p.precioVenta || 0);
+    const unidad = p.unidad || 'UND';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <input
+          type="number"
+          min="0"
+          max="${p.stock}"
+          value="0"
+          class="form-control form-control-sm text-end input-salida-ruta"
+          data-producto-id="${p.id}"
+          data-precio="${precio}"
+        >
+      </td>
+      <td>${p.nombre}</td>
+      <td class="text-center">${unidad}</td>
+      <td class="text-end">Q <span class="precio-ruta">${precio.toFixed(2)}</span></td>
+      <td class="text-end">Q <span class="total-ruta">0.00</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // eventos para recalcular totales al escribir cantidades
+  document.querySelectorAll('.input-salida-ruta').forEach(input => {
+    input.addEventListener('input', actualizarTotalFilaRuta);
+  });
+
+  actualizarTotalGeneralRuta();
+}
+
+function actualizarTotalFilaRuta(e) {
+  const input = e.target;
+  let cantidad = Number(input.value || 0);
+  if (cantidad < 0) cantidad = 0;
+
+  const precio = Number(input.dataset.precio || 0);
+
+  const tr = input.closest('tr');
+  const totalSpan = tr.querySelector('.total-ruta');
+  const total = cantidad * precio;
+  totalSpan.textContent = total.toFixed(2);
+
+  actualizarTotalGeneralRuta();
+}
+
+function actualizarTotalGeneralRuta() {
+  let suma = 0;
+  document.querySelectorAll('.total-ruta').forEach(span => {
+    const v = Number(span.textContent.replace(',', '') || 0);
+    suma += v;
+  });
+
+  const lbl = document.getElementById('rutaTotalGeneral');
+  if (lbl) lbl.textContent = suma.toFixed(2);
+}
+
+
+
+async function crearRuta() {
+  console.log('crearRuta() llamado');
+
+  const fecha       = document.getElementById('rutaFecha')?.value;
+  const nombre      = document.getElementById('rutaNombre')?.value.trim();
+  const direccion   = document.getElementById('rutaDireccion')?.value.trim();
+  const piloto      = document.getElementById('rutaPiloto')?.value.trim();
+  const licencia    = document.getElementById('rutaLicencia')?.value.trim();
+  const condicion   = document.getElementById('rutaCondicion')?.value.trim();
+  const placa       = document.getElementById('rutaPlaca')?.value.trim();
+  const mensajeDiv  = document.getElementById('rutasMensaje');
+
+  if (!fecha || !nombre) {
+    mostrarToast('La fecha y el nombre son obligatorios para la ruta', 'warning');
+    return;
+  }
+
+  // Leer cantidades
+  const inputs = document.querySelectorAll('.input-salida-ruta');
+  const productos = [];
+  inputs.forEach(input => {
+    const cant = parseInt(input.value || '0', 10);
+    const productoId = parseInt(input.getAttribute('data-producto-id'), 10);
+    if (cant > 0 && Number.isFinite(productoId)) {
+      productos.push({ productoId, cantidadSalida: cant });
+    }
+  });
+
+  if (productos.length === 0) {
+    mostrarToast('No has indicado ninguna cantidad para sacar a ruta', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BASE}/rutas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fecha,
+        nombre,
+        direccion,
+        piloto,
+        licencia,
+        condicion,
+        placa,
+        productos
+      })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('Error HTTP en crearRuta:', res.status, txt);
+      mostrarToast('Error creando la ruta', 'danger');
+      return;
+    }
+
+    const data = await res.json();
+    rutaActualId = data.rutaId || data.id || null;
+
+    mostrarToast('Ruta registrada correctamente ✅', 'success');
+
+    // limpiar cantidades
+    document.querySelectorAll('.input-salida-ruta').forEach(input => {
+      input.value = '0';
+    });
+    document.querySelectorAll('.total-ruta').forEach(span => {
+      span.textContent = '0.00';
+    });
+    actualizarTotalGeneralRuta();
+
+    await cargarProductos();
+    renderProductosRuta();
+
+    const btnImprimir = document.getElementById('btnImprimirRuta');
+    if (btnImprimir && rutaActualId) btnImprimir.disabled = false;
+
+    if (mensajeDiv) {
+      mensajeDiv.textContent = `Última ruta guardada: #${rutaActualId} - Nombre: ${nombre}`;
+    }
+
+  } catch (err) {
+    console.error(err);
+    mostrarToast('Error al guardar la ruta', 'danger');
+  }
+}
+
+
+
+function imprimirRuta() {
+  if (!rutaActualId) {
+    mostrarToast('Primero guarda una ruta para poder imprimirla', 'warning');
+    return;
+  }
+
+  const url = `/rutas/${rutaActualId}/pdf`;
+
+  // Reutilizamos tu función abrirFacturaPDF (abre y descarga PDF)
+  if (typeof abrirFacturaPDF === 'function') {
+    abrirFacturaPDF(url);
+  } else if (window.electronAPI && window.electronAPI.abrirPDF) {
+    window.electronAPI.abrirPDF(url);
+  } else {
+    console.error('No hay método configurado para abrir PDFs');
+  }
+}
+
+// =========================================
+// 🚚 DEVOLUCIÓN DE RUTA
+// =========================================
+
+// Cargar lista de rutas en el <select>
+async function cargarRutasDevolucion() {
+  const select = document.getElementById('selectRutaDevolucion');
+  if (!select) return;
+
+  try {
+    const res = await fetch(`${BASE}/rutas`);
+    const rutas = await res.json();
+
+    select.innerHTML = '<option value="">-- Seleccione una ruta --</option>';
+
+    (rutas || []).forEach(r => {
+      const fechaStr = r.fecha ? new Date(r.fecha).toLocaleDateString() : '';
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `Ruta #${r.id} - ${fechaStr} - ${r.piloto || ''}`;
+      select.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('Error cargando rutas:', err);
+  }
+}
+
+// Cargar detalles de la ruta seleccionada
+async function cargarDetallesRutaDevolucion() {
+  const select = document.getElementById('selectRutaDevolucion');
+  const rutaId = select?.value;
+  const tbody = document.getElementById('rutasDevolucionBody');
+  const info = document.getElementById('infoRutaDevolucion');
+  const btnGuardar = document.getElementById('btnGuardarDevolucionRuta');
+
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  if (info) info.textContent = '';
+  if (btnGuardar) btnGuardar.disabled = true;
+
+  if (!rutaId) return;
+
+  try {
+    const res = await fetch(`${BASE}/rutas/${rutaId}`);
+    const ruta = await res.json();
+
+    if (!res.ok || !ruta) {
+      console.error('Error cargando ruta:', ruta);
+      return;
+    }
+
+    if (info) {
+      const fechaStr = ruta.fecha ? new Date(ruta.fecha).toLocaleDateString() : '';
+      info.textContent = `Piloto: ${ruta.piloto || ''} | Vehículo: ${ruta.vehiculo || ''} | Fecha: ${fechaStr}`;
+    }
+
+    (ruta.DetallesRuta || []).forEach(det => {
+      const salida = Number(det.cantidadSalida || 0);
+      const devuelta = Number(det.cantidadDevuelta || 0);
+      const vendido = salida - devuelta;
+
+      const tr = document.createElement('tr');
+      tr.dataset.detalleId = det.id;
+
+      tr.innerHTML = `       
+        <td>${det.ProductoRuta?.nombre || ''}</td>        
+        <td class="text-end">${salida}</td>
+        <td class="text-end">
+          <input type="number"
+                 min="0"
+                 max="${salida}"
+                 value="${devuelta}"
+                 class="form-control form-control-sm text-end input-devuelta-ruta">
+        </td>
+        <td class="text-end col-vendido-ruta">${vendido}</td>
+      `;
+
+      // actualizar columna "Vendido" cuando cambie el input
+      const input = tr.querySelector('.input-devuelta-ruta');
+      input.addEventListener('input', () => {
+        let val = Number(input.value || 0);
+        if (val < 0) val = 0;
+        if (val > salida) val = salida;
+        const vendidoNuevo = salida - val;
+        tr.querySelector('.col-vendido-ruta').textContent = vendidoNuevo;
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    if (btnGuardar && (ruta.DetallesRuta || []).length > 0) {
+      btnGuardar.disabled = false;
+    }
+  } catch (err) {
+    console.error('Error cargando detalles de ruta:', err);
+  }
+}
+
+// Guardar devolución
+async function guardarDevolucionRuta() {
+  const select = document.getElementById('selectRutaDevolucion');
+  const rutaId = select?.value;
+  if (!rutaId) {
+    mostrarToast('Seleccione una ruta primero', 'warning');
+    return;
+  }
+
+  const filas = document.querySelectorAll('#rutasDevolucionBody tr');
+  const detalles = [];
+
+  filas.forEach(tr => {
+    const rutaDetalleId = Number(tr.dataset.detalleId);
+    const input = tr.querySelector('.input-devuelta-ruta');
+    let cantidadDevuelta = Number(input?.value || 0);
+    if (!Number.isFinite(cantidadDevuelta) || cantidadDevuelta < 0) {
+      cantidadDevuelta = 0;
+    }
+    detalles.push({ rutaDetalleId, cantidadDevuelta });
+  });
+
+  try {
+    const res = await fetch(`${BASE}/rutas/${rutaId}/devolucion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ detalles })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.error('Error devolucion ruta:', data);
+      mostrarToast(data.error || 'Error guardando devolución', 'danger');
+      return;
+    }
+
+    mostrarToast('Devolución guardada correctamente ✅', 'success');
+
+    // Actualizar stock en pantalla y refrescar detalles
+    await cargarProductos();
+    await cargarDetallesRutaDevolucion();
+
+  } catch (err) {
+    console.error('Error guardando devolución de ruta:', err);
+    mostrarToast('Error guardando devolución', 'danger');
+  }
+}
+
 
 // =============================
 // ⚙ CONFIGURACIÓN (localStorage)
@@ -1130,12 +1568,17 @@ function toggleCamposPago() {
 // 🚀 INICIALIZACIÓN GLOBAL (Corregida)
 // =========================================
 function init() {
+
+
+
   cargarProductos();
   cargarHistorial();
-cargarConfiguracion();
-cargarClientes();
-setupClienteAutocomplete();
-cargarMovimientosFinancieros();
+  cargarConfiguracion();
+  cargarClientes();
+  setupClienteAutocomplete();
+  cargarMovimientosFinancieros();
+  renderProductosRuta();
+  cargarRutasDevolucion(); 
 
 
 // ✅ Guardar configuración cuando cambien los switches
@@ -1160,41 +1603,81 @@ el('btnRefrescarHistorial')?.addEventListener('click', async () => {
 });
 
  el('btnGuardarMovimiento')?.addEventListener('click', guardarMovimientoFinanciero);
+el('btnCierrePDF')?.addEventListener('click', generarCierrePDF);
+
+el('filtroTipoMov')?.addEventListener('change', renderMovimientosFinancieros);
+el('filtroFechaDesde')?.addEventListener('change', renderMovimientosFinancieros);
+el('filtroFechaHasta')?.addEventListener('change', renderMovimientosFinancieros);
+el('filtroBuscarMov')?.addEventListener('input', renderMovimientosFinancieros);
+
+
 
 el('filtroCliente')?.addEventListener('input', cargarCreditos);
 el('filtroEstado')?.addEventListener('change', cargarCreditos);
 
 
+ // Rutas
+  document.getElementById('btnGuardarRuta')?.addEventListener('click', crearRuta);
+  document.getElementById('btnImprimirRuta')?.addEventListener('click', imprimirRuta);
 
+// Rutas - devolución
+  document.getElementById('selectRutaDevolucion')?.addEventListener('change', cargarDetallesRutaDevolucion);
+  document.getElementById('btnGuardarDevolucionRuta')?.addEventListener('click', guardarDevolucionRuta);
 
- document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tabButton => {
+  const rutasTab = document.getElementById('rutas-tab');
+  if (rutasTab) {
+    rutasTab.addEventListener('shown.bs.tab', () => {
+      // Cuando entro a la pestaña, pinto la tabla con los productos
+      renderProductosRuta();
+      cargarRutasDevolucion();
+    });
+  }
+
+// ✅ Manejo de pestañas con Bootstrap y ajuste de altura
+
+ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tabButton => {
   tabButton.addEventListener('shown.bs.tab', (event) => {
+    // Selector del contenido asociado a la pestaña
+    const targetSelector = event.target.getAttribute('data-bs-target');
+    const target = document.querySelector(targetSelector);
+
+    if (!target) {
+      console.warn('No se encontró tab-pane para:', targetSelector);
+      return; // evitamos el .classList sobre null
+    }
+
+    // Opcional: si quieres manejar tú las clases show/active
     document.querySelectorAll('.tab-pane').forEach(pane => {
       pane.classList.remove('show', 'active');
     });
-
-    let target = document.querySelector(event.target.getAttribute('data-bs-target'));
     target.classList.add('show', 'active');
-    
+
+    // Ajustar altura del contenedor de tabs
     const tabContent = document.querySelector('.tab-content');
-    tabContent.style.height = 'auto';
+    if (tabContent) {
+      tabContent.style.height = 'auto';
+    }
   });
 });
+
 
 }
 
 const creditosTab = document.getElementById('creditos-tab');
 const resumenDiv = document.getElementById('resumenCreditos');
 
-// Mostrar resumen cuando entro a la pestaña Créditos
-creditosTab.addEventListener('shown.bs.tab', () => {
-  cargarCreditos(); // se vuelve a cargar cada que entres
-});
+if (creditosTab) {
+  // Mostrar resumen cuando entro a la pestaña Créditos
+  creditosTab.addEventListener('shown.bs.tab', () => {
+    cargarCreditos(); // se vuelve a cargar cada que entres
+  });
 
-// Limpiar contenido cuando salgo
-creditosTab.addEventListener('hidden.bs.tab', () => {
-  resumenDiv.innerHTML = '';
-});
+  // Limpiar contenido cuando salgo
+  creditosTab.addEventListener('hidden.bs.tab', () => {
+    if (resumenDiv) resumenDiv.innerHTML = '';
+  });
+}
+
 
 // 🔹 Ingresos y Egresos
 const finanzasTab = document.getElementById('finanzas-tab');

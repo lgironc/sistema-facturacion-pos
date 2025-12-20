@@ -83,6 +83,15 @@
       </li>
 
       <li class="nav-item" role="presentation">
+      <button class="nav-link" id="rutas-tab"
+          data-bs-toggle="tab" data-bs-target="#rutasSection"
+          type="button" role="tab">
+      🚚 Rutas 
+      </button>
+      </li>
+
+
+      <li class="nav-item" role="presentation">
       <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab">⚙️ Configuración</button>
       </li>
 
@@ -558,6 +567,27 @@
   <div class="card mt-3">
     <div class="card-body">
 
+      <h5 class="mb-3">Cierre de caja</h5>
+
+<div class="row g-2 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">Desde</label>
+    <input type="date" id="cierreDesde" class="form-control">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Hasta</label>
+    <input type="date" id="cierreHasta" class="form-control">
+  </div>
+  <div class="col-md-3 d-flex align-items-end">
+    <button id="btnCierrePDF" class="btn btn-outline-secondary w-100">
+      📄 Generar PDF de cierre
+    </button>
+  </div>
+</div>
+
+<hr>
+
+
       <h5 class="mb-3">Registrar movimiento financiero</h5>
 
       <div class="row g-2 mb-3">
@@ -589,6 +619,38 @@
       <!-- 🔹 Resumen superior -->
       <div id="resumenFinanciero" class="row g-2 mb-3"></div>
 
+ <!-- 🔍 Filtros de movimientos -->
+<div class="row g-2 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">Tipo</label>
+    <select id="filtroTipoMov" class="form-control">
+      <option value="todos">Todos</option>
+      <option value="solo_ingresos">Solo ingresos</option>
+      <option value="solo_egresos">Solo egresos</option>
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Desde</label>
+    <input type="date" id="filtroFechaDesde" class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Hasta</label>
+    <input type="date" id="filtroFechaHasta" class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Buscar</label>
+    <input type="text"
+           id="filtroBuscarMov"
+           class="form-control"
+           placeholder="Buscar por descripción, tipo o monto…">
+  </div>
+</div>
+
+</div>
+
       <h5 class="mb-3">Historial de movimientos</h5>
 
       <div class="table-responsive">
@@ -608,6 +670,160 @@
     </div>
   </div>
 
+</div>
+
+<!-- ===========================
+     TAB RUTAS
+=========================== -->
+<div class="tab-pane fade" id="rutasSection" role="tabpanel" aria-labelledby="rutas-tab">
+
+  <h4 class="mb-3">Salida de ruta (camión)</h4>  <div class="card mt-3">
+    <div class="card-body">
+
+      <!-- Encabezado tipo Excel -->
+  <div class="card mb-3">
+    <div class="card-body">
+
+      <div class="row mb-2">
+        <div class="col-md-6">
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Fecha:</div>
+            <div class="col-8">
+              <input type="date" id="rutaFecha" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Nombre:</div>
+            <div class="col-8">
+              <input type="text" id="rutaNombre" class="form-control form-control-sm" placeholder="Luis">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Dirección:</div>
+            <div class="col-8">
+              <input type="text" id="rutaDireccion" class="form-control form-control-sm" placeholder="Opcional">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Piloto:</div>
+            <div class="col-8">
+              <input type="text" id="rutaPiloto" class="form-control form-control-sm" placeholder="Nombre del piloto">
+            </div>
+          </div>
+        </div>
+
+         <div class="col-md-6">
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Licencia:</div>
+            <div class="col-8">
+              <input type="text" id="rutaLicencia" class="form-control form-control-sm" placeholder="Opcional">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Condición:</div>
+            <div class="col-8">
+              <input type="text" id="rutaCondicion" class="form-control form-control-sm" placeholder="Contado / Crédito / etc.">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-4 text-end fw-bold">Placa:</div>
+            <div class="col-8">
+              <input type="text" id="rutaPlaca" class="form-control form-control-sm" placeholder="P-123ABC">
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+        <!-- Tabla de productos estilo Excel -->
+  <div class="table-responsive mb-2">
+    <table class="table table-sm align-middle">
+      <thead class="table-light">
+        <tr>
+    <th style="width: 80px;">Cantidad</th>
+    <th>Descripción</th>
+    <th style="width: 120px;" class="text-center">Unidad</th>
+    <th style="width: 120px;" class="text-end">Precio</th>
+    <th style="width: 140px;" class="text-end">Total</th>
+  </tr>
+</thead>
+<tbody id="rutasProductosBody"></tbody>
+
+        </table>
+      </div>
+      
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div id="rutasMensaje" class="small text-muted"></div>
+    <div class="fw-bold">
+      Total ruta: Q <span id="rutaTotalGeneral">0.00</span>
+    </div>
+  </div>
+     
+
+
+      <!-- BOTONES RUTAS -->
+<div class="d-flex gap-2 mb-4">
+    <button id="btnGuardarRuta" class="btn btn-primary">
+      Guardar salida de ruta
+    </button>
+    <button id="btnImprimirRuta" class="btn btn-outline-secondary" disabled>
+      Imprimir hoja de ruta
+    </button>
+  </div>
+
+  <hr>
+
+ <!-- ============================
+     DEVOLUCIÓN DE RUTA
+============================= -->
+<div class="card mt-4">
+  <div class="card-header">
+    Devolución de ruta
+  </div>
+  <div class="card-body">
+
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Ruta</label>
+        <select id="selectRutaDevolucion" class="form-select form-select-sm">
+          <option value="">-- Seleccione una ruta --</option>
+        </select>
+      </div>
+      <div class="col-md-8 d-flex align-items-end">
+        <span id="infoRutaDevolucion" class="text-muted"></span>
+      </div>
+    </div>
+
+    <div class="table-responsive" style="max-height: 320px;">
+      <table class="table table-sm table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Producto</th>
+            <th class="text-end">Salida</th>
+            <th class="text-end">Devuelto</th>
+            <th class="text-end">Vendido</th>
+          </tr>
+        </thead>
+        <tbody id="rutasDevolucionBody">
+          <!-- filas dinámicas -->
+        </tbody>
+      </table>
+    </div>
+
+    <button id="btnGuardarDevolucionRuta"
+            class="btn btn-success mt-2"
+            disabled>
+      Guardar devolución
+    </button>
+  </div>
+</div>
+
+      <div id="rutasMensaje" class="mt-2 small text-muted"></div>
+
+    </div>
+  </div>
 </div>
 
 
