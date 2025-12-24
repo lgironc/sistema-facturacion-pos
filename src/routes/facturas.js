@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { Cliente, Producto, Factura, FacturaDetalle, CuentaPorCobrar, MovimientoFinanciero, HistorialInventario } = require('../models');
 const PDFDocument = require('pdfkit');
+const { getPaths } = require('../utils/paths');
 
-
+ const fs = require('fs');
+    const path = require('path');
 
 
 // POST /facturas  — versión estable sin transacciones y con precioUnitario
@@ -265,6 +267,10 @@ router.get('/:id', async (req, res) => {
 // ===========================
 // GET - Generar y GUARDAR PDF de factura en carpeta /facturas_pos/
 // ===========================
+// ===========================
+// GET - Generar y GUARDAR PDF de factura en carpeta /facturasPDF/
+// (TABLA MONOESPACIADA estilo Rutas)
+// ===========================
 router.get('/:id/pdf', async (req, res) => {
   try {
     const { id } = req.params;
@@ -283,7 +289,6 @@ router.get('/:id/pdf', async (req, res) => {
             { model: Producto, as: 'Producto', attributes: ['nombre', 'precioVenta'] }
           ]
         },
-        // 👇 CuentaPorCobrar va AQUÍ, no dentro de FacturaDetalles
         { model: CuentaPorCobrar, as: 'CuentaPorCobrar' }
       ]
     });
@@ -294,145 +299,148 @@ router.get('/:id/pdf', async (req, res) => {
 
     const numeroFactura = `INT-${String(factura.id).padStart(4, '0')}`;
 
+    // ✅ RUTA PORTABLE (junto al .exe)
+    const { facturasPDFDir } = getPaths();
+    if (!facturasPDFDir) throw new Error('facturasPDFDir no definido (getPaths)');
+
+    if (!fs.existsSync(facturasPDFDir)) fs.mkdirSync(facturasPDFDir, { recursive: true });
+
+    const filePath = path.join(facturasPDFDir, `Factura_${numeroFactura}.pdf`);
+    if (!filePath) throw new Error('filePath quedó undefined');
+
     // =========================
-    // 📁 Verificar carpeta destino
+    // 🧾 Crear documento PDF
     // =========================
-   const path = require('path');
-const fs = require('fs');
+    const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+    const writeStream = fs.createWriteStream(filePath);
+    doc.pipe(writeStream);
 
-// Usar la misma carpeta que Electron: facturasPDF en la raíz del proyecto
-const facturasDir = path.join(__dirname, '..', 'facturasPDF');
+    // ========================
+    // ENCABEZADO
+    // ========================
+    doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(10).text('Calle Real 2-89A Zona 1, San Miguel Dueñas | Tel: 5667-9720', { align: 'center' });
+    doc.text('NIT: 7225652', { align: 'center' });
+    doc.moveDown(1);
 
-if (!fs.existsSync(facturasDir)) {
-  fs.mkdirSync(facturasDir, { recursive: true });
-}
+    // ========================
+    // INFO FACTURA + CLIENTE
+    // ========================
+    doc.fontSize(12)
+      .text(`Factura No: ${numeroFactura}`, 50, doc.y, { continued: true })
+      .text(`Fecha: ${new Date(factura.createdAt).toLocaleDateString()} ${new Date(factura.createdAt).toLocaleTimeString()}`, { align: 'right' });
 
+    doc.moveDown(0.5);
+    doc.text('Cliente:', { underline: true });
+    doc.text(`Nombre: ${factura.Cliente?.nombre || 'Mostrador'}`);
+    if (factura.Cliente?.telefono) doc.text(`Teléfono: ${factura.Cliente.telefono}`);
+    if (factura.Cliente?.direccion) doc.text(`Dirección: ${factura.Cliente.direccion}`);
+    doc.moveDown(1);
 
-const filePath = path.join(facturasDir, `Factura_${numeroFactura}.pdf`);
-
+   // =========================
+// TABLA MONOESPACIADA (estilo Rutas)
 // =========================
-// 🧾 Crear documento PDF
-// =========================
+doc.font('Courier-Bold').fontSize(10);
 
-const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+const yHeader = doc.y;
 
-// 🖨 Guardarlo en archivo físico
-const writeStream = fs.createWriteStream(filePath);
-doc.pipe(writeStream);
+doc.text(
+  'CANT  PRODUCTO                                              P.UNIT          SUBTOTAL',
+  50,
+  yHeader
+);
 
-// ========================
-// ENCABEZADO
-// ========================
-doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
-doc.moveDown(0.3);
-doc.fontSize(10).text('Calle Real 2-89A Zona 1, San Miguel Dueñas | Tel: 5667-9720', { align: 'center' });
-doc.text('NIT: 7225652', { align: 'center' });
-doc.moveDown(1);
 
-// ========================
-// INFO FACTURA + CLIENTE
-// ========================
-doc.fontSize(12)
-  .text(`Factura No: ${numeroFactura}`, 50, doc.y, { continued: true })
-  .text(`Fecha: ${new Date(factura.createdAt).toLocaleDateString()} ${new Date(factura.createdAt).toLocaleTimeString()}`, { align: 'right' });
 
-doc.moveDown(0.5);
-doc.text('Cliente:', { underline: true });
-doc.text(`Nombre: ${factura.Cliente?.nombre || 'Mostrador'}`);
-if (factura.Cliente?.telefono) doc.text(`Teléfono: ${factura.Cliente.telefono}`);
-if (factura.Cliente?.direccion) doc.text(`Dirección: ${factura.Cliente.direccion}`);
-doc.moveDown(1);
+// línea debajo del header
+doc.moveTo(40, yHeader + 16).lineTo(570, yHeader + 16).stroke();
 
-// ========================
-// TABLA DE DETALLES
-// ========================
-doc.font('Helvetica-Bold');
-doc.text('CANT', 50);
-doc.text('PRODUCTO', 100);
-doc.text('P. UNIT', 340, undefined, { width: 80, align: 'right' });
-doc.text('SUBTOTAL', 440, undefined, { width: 80, align: 'right' });
+// arrancar filas
+doc.y = yHeader + 26;
+doc.font('Courier').fontSize(10);
 
-doc.moveDown(0.3).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-doc.moveDown(0.5);
-doc.font('Helvetica');
+let totalCalc = 0;
 
-factura.FacturaDetalles.forEach(detalle => {
-  const precioDet = Number((detalle.precioUnitario ?? detalle.precio ?? detalle.Producto?.precioVenta) || 0);
-  const subtotal = Number((detalle.cantidad * precioDet).toFixed(2));
-  const y = doc.y;
+(factura.FacturaDetalles || []).forEach((detalle) => {
+  const cant = Number(detalle.cantidad || 0);
 
-  doc.text(detalle.cantidad.toString(), 50, y);
-  doc.text(detalle.Producto?.nombre || 'N/D', 100, y, { width: 230 });
-  doc.text(`Q${precioDet.toFixed(2)}`, 340, y, { width: 80, align: 'right' });
-  doc.text(`Q${subtotal.toFixed(2)}`, 440, y, { width: 80, align: 'right' });
+  const nombre = String(detalle.Producto?.nombre || 'N/D');
 
-  doc.moveDown(0.8);
-});
-
-doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-doc.moveDown(1);
-
-// ========================
-// TOTAL (NEGRITA A LA DERECHA)
-// ========================
-doc.font('Helvetica-Bold').fontSize(14)
-  .text(`TOTAL: Q${Number(factura.total || 0).toFixed(2)}`, 340, doc.y, { width: 180, align: 'right' });
-
-// ========================
-// INFORMACIÓN DE PAGO
-// ========================
-doc.moveDown(1);
-doc.font('Helvetica').fontSize(11);
-
-const tipoPago = factura.tipoPago || 'contado';
-let pagoTexto = '';
-
-if (tipoPago === 'contado') {
-  const efectivo = Number(factura.efectivo || 0);
-  const cambio = Math.max(efectivo - Number(factura.total), 0);
-  pagoTexto = ` Tipo de pago: Contado\nEfectivo recibido: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`;
-} else if (tipoPago === 'credito') {
-  const cxc = factura.CuentaPorCobrar || {};
-  const saldo = Number(cxc.saldoPendiente ?? factura.total);
-  const abono = Number(factura.total) - saldo;
-  pagoTexto = `Tipo de pago: Crédito\nAbono inicial: Q${abono.toFixed(2)}\nSaldo pendiente: Q${saldo.toFixed(2)}`;
-} else {
-  pagoTexto = `Tipo de pago: ${tipoPago}`;
-}
-
-doc.text(pagoTexto, { align: 'left' });
-
-// ========================
-// PIE DE PÁGINA
-// ========================
-const pageWidth = doc.page.width;
-const margin = 40;
-const printableWidth = pageWidth - margin * 2;
-let footerY = doc.page.height - 120;
-
-doc.font('Helvetica').fontSize(12)
-  .text('¡Gracias por su compra!', margin, footerY, {
-    width: printableWidth,
-    align: 'center'
-  });
-
-doc.font('Helvetica-Oblique').fontSize(10)
-  .text(
-    'Factura interna — No válida como FEL hasta su certificación ante SAT',
-    margin,
-    doc.y + 10,
-    { width: printableWidth, align: 'center' }
+  const precio = Number(
+    (detalle.precioUnitario ?? detalle.precio ?? detalle.Producto?.precioVenta) || 0
   );
 
-doc.end();
+  const subtotal = Number((cant * precio).toFixed(2));
+  totalCalc += subtotal;
 
-writeStream.on('finish', () => {
-  res.sendFile(filePath); // ✅ Devolver PDF directamente al frontend
+  // Anchos: cant(5) + nombre(42) + punit(12) + subtotal(12)
+ const fila =
+  String(cant).padEnd(5, ' ') +
+  nombre.padEnd(48, ' ').slice(0, 48) +
+  (`Q${precio.toFixed(2)}`).padStart(16, ' ') +
+  (`Q${subtotal.toFixed(2)}`).padStart(16, ' ');
+
+
+  doc.text(fila, 50, doc.y, { lineBreak: false });
+  doc.y += 13;
 });
 
+doc.moveDown(0.4);
+doc.moveTo(40, doc.y).lineTo(570, doc.y).stroke();
+doc.moveDown(0.8);
+
+// TOTAL (usa factura.total como fuente de verdad, pero si quieres comparar: totalCalc)
+doc.font('Courier-Bold').fontSize(12);
+doc.text(`TOTAL: Q${Number(factura.total || 0).toFixed(2)}`, 350);
+
+
+    // INFO PAGO
+    doc.moveDown(1);
+    doc.font('Helvetica').fontSize(11);
+
+    const tipoPago = factura.tipoPago || 'contado';
+    let pagoTexto = '';
+
+    if (tipoPago === 'contado') {
+      const efectivo = Number(factura.efectivo || 0);
+      const cambio = Math.max(efectivo - Number(factura.total || 0), 0);
+      pagoTexto = `Tipo de pago: Contado\nEfectivo recibido: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`;
+    } else if (tipoPago === 'credito') {
+      const cxc = factura.CuentaPorCobrar || {};
+      const saldo = Number(cxc.saldoPendiente ?? factura.total ?? 0);
+      const abono = Number(factura.total || 0) - saldo;
+      pagoTexto = `Tipo de pago: Crédito\nAbono inicial: Q${abono.toFixed(2)}\nSaldo pendiente: Q${saldo.toFixed(2)}`;
+    } else {
+      pagoTexto = `Tipo de pago: ${tipoPago}`;
+    }
+
+    doc.text(pagoTexto);
+
+    // PIE
+    const margin = 40;
+    const printableWidth = doc.page.width - margin * 2;
+    let footerY = doc.page.height - 120;
+
+    doc.font('Helvetica').fontSize(12)
+      .text('¡Gracias por su compra!', margin, footerY, { width: printableWidth, align: 'center' });
+
+    doc.font('Helvetica-Oblique').fontSize(10)
+      .text('Factura interna — No válida como FEL hasta su certificación ante SAT', margin, doc.y + 10, {
+        width: printableWidth,
+        align: 'center'
+      });
+
+    doc.end();
+
+    writeStream.on('finish', () => {
+      // ✅ Esto ya debe funcionar porque filePath ya es válido
+      res.sendFile(filePath);
+    });
+
   } catch (error) {
-    console.error("Error generando PDF:", error);
-    res.status(500).json({ error: 'Error generando PDF' });
+    console.error("❌ Error generando PDF:", error);
+    res.status(500).json({ error: 'Error generando PDF', message: error.message });
   }
 });
 

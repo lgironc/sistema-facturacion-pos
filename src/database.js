@@ -1,10 +1,12 @@
 const { Sequelize } = require('sequelize');
-const path = require('path');
+const { getPaths } = require('./utils/paths');
+
+const { dbPath } = getPaths();
 
 const sequelize = new Sequelize({
   dialect: 'sqlite',
-  storage: path.join(__dirname, '../data/database.sqlite'),
-  logging: false // Cambiar a true si deseas ver consultas SQL en consola
+  storage: dbPath,
+  logging: false
 });
 
 module.exports = sequelize;

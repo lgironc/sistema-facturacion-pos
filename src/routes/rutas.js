@@ -4,6 +4,9 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const sequelize = require('../database');
+const { Op } = require('sequelize');
+const { getPaths } = require('../utils/paths');
+const { rutasPDFDir } = getPaths();
 
 
 
@@ -37,18 +40,23 @@ router.get('/', async (req, res) => {
 // ======================================
 router.post('/', async (req, res) => {
   try {
-    const { fecha, piloto, vehiculo, observaciones, productos } = req.body;
+   const { fecha, nombre, direccion, piloto, licencia, condicion, placa, observaciones, productos } = req.body;
 
-    if (!fecha || !piloto || !Array.isArray(productos) || productos.length === 0) {
-      return res.status(400).json({ error: 'Datos incompletos para crear ruta' });
-    }
+if (!fecha || !nombre || !Array.isArray(productos) || productos.length === 0) {
+  return res.status(400).json({ error: 'Datos incompletos para crear ruta' });
+}
 
-    const ruta = await Ruta.create({
-      fecha,
-      piloto,
-      vehiculo,
-      observaciones
-    });
+const ruta = await Ruta.create({
+  fecha,
+  nombre,
+  direccion,
+  piloto,
+  licencia,
+  condicion,
+  placa,
+  observaciones
+});
+
 
     for (const p of productos) {
       const prod = await Producto.findByPk(p.productoId);
@@ -74,6 +82,261 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.get('/devoluciones/flat', async (req, res) => {
+  try {
+    const {
+      nombre,
+      direccion,
+      vehiculo,  // -> RutaCabecera.placa
+      fecha,     // exacta YYYY-MM-DD
+      desde,     // rango YYYY-MM-DD
+      hasta      // rango YYYY-MM-DD
+    } = req.query;
+
+    // WHERE para la cabecera de ruta
+    const whereRuta = {};
+
+    if (nombre && nombre.trim()) {
+      whereRuta.nombre = { [Op.like]: `%${nombre.trim()}%` };
+    }
+
+    if (direccion && direccion.trim()) {
+      whereRuta.direccion = { [Op.like]: `%${direccion.trim()}%` };
+    }
+
+    if (vehiculo && vehiculo.trim()) {
+      whereRuta.placa = { [Op.like]: `%${vehiculo.trim()}%` };
+    }
+
+    if (fecha && fecha.trim()) {
+      whereRuta.fecha = fecha.trim();
+    } else if ((desde && desde.trim()) || (hasta && hasta.trim())) {
+      whereRuta.fecha = {};
+      if (desde && desde.trim()) whereRuta.fecha[Op.gte] = desde.trim();
+      if (hasta && hasta.trim()) whereRuta.fecha[Op.lte] = hasta.trim();
+    }
+
+    // Query principal: solo detalles con devolución
+    const filas = await RutaDetalle.findAll({
+      where: {
+        cantidadDevuelta: { [Op.gt]: 0 }
+      },
+      attributes: [
+        'id',
+        'rutaId',
+        'productoId',
+        'cantidadSalida',
+        'cantidadDevuelta'
+      ],
+      include: [
+        {
+          model: Ruta,
+          as: 'RutaCabecera',
+          required: true,
+          where: whereRuta,
+          attributes: ['id', 'fecha', 'nombre', 'direccion', 'placa', 'piloto']
+        },
+        {
+          model: Producto,
+          as: 'ProductoRuta',
+          required: true,
+          attributes: ['id', 'nombre']
+        }
+      ],
+      order: [
+        [{ model: Ruta, as: 'RutaCabecera' }, 'fecha', 'DESC'],
+        [{ model: Ruta, as: 'RutaCabecera' }, 'id', 'DESC'],
+        ['id', 'DESC']
+      ]
+    });
+
+    // Formato listo para tabla plana
+    const resultado = filas.map(d => ({
+      detalleId: d.id,
+      rutaId: d.rutaId,
+      fecha: d.RutaCabecera?.fecha ?? null,
+      nombre: d.RutaCabecera?.nombre ?? null,
+      direccion: d.RutaCabecera?.direccion ?? null,
+      vehiculo: d.RutaCabecera?.placa ?? null,
+      piloto: d.RutaCabecera?.piloto ?? null,
+      productoId: d.productoId,
+      producto: d.ProductoRuta?.nombre ?? null,
+      cantidadSalida: d.cantidadSalida,
+      cantidadDevuelta: d.cantidadDevuelta
+    }));
+
+    return res.json(resultado);
+  } catch (error) {
+    console.error('Error en GET /rutas/devoluciones/flat:', error);
+    return res.status(500).json({ error: 'Error obteniendo devoluciones (tabla plana)' });
+  }
+});
+
+// ===============================================
+// GET /rutas/devoluciones/resumen
+// Resumen de rutas: muestra TODAS las rutas con detalles
+// Total vendido (Q) = (salida - devuelto) * precioVenta
+// devuelto NULL -> 0
+// ===============================================
+router.get('/devoluciones/resumen', async (req, res) => {
+  try {
+    const { nombre, direccion, vehiculo, fecha, desde, hasta } = req.query;
+
+    const whereRuta = {};
+
+    if (nombre && nombre.trim()) {
+      whereRuta.nombre = { [Op.like]: `%${nombre.trim()}%` };
+    }
+    if (direccion && direccion.trim()) {
+      whereRuta.direccion = { [Op.like]: `%${direccion.trim()}%` };
+    }
+    if (vehiculo && vehiculo.trim()) {
+  whereRuta.vehiculo = { [Op.like]: `%${vehiculo.trim()}%` };
+}
+    if (fecha && fecha.trim()) {
+      whereRuta.fecha = fecha.trim();
+    } else if ((desde && desde.trim()) || (hasta && hasta.trim())) {
+      whereRuta.fecha = {};
+      if (desde && desde.trim()) whereRuta.fecha[Op.gte] = desde.trim();
+      if (hasta && hasta.trim()) whereRuta.fecha[Op.lte] = hasta.trim();
+    }
+
+    const rutas = await Ruta.findAll({
+      where: whereRuta,
+      order: [['fecha', 'DESC'], ['id', 'DESC']],
+      attributes: ['id', 'fecha', 'nombre', 'direccion', 'placa'],
+      include: [
+        {
+          model: RutaDetalle,
+          as: 'DetallesRuta',
+          required: true,
+          attributes: ['id', 'cantidadSalida', 'cantidadDevuelta', 'productoId'],
+          include: [
+            {
+              model: Producto,
+              as: 'ProductoRuta',
+              required: true,
+              attributes: ['id', 'nombre', 'precioVenta'] // ✅ NO pedir "precio"
+            }
+          ]
+        }
+      ]
+    });
+
+    const resultado = rutas.map(r => {
+      const items = r.DetallesRuta || [];
+
+      const totalVendidoQ = items.reduce((sum, d) => {
+        const salida = Number(d.cantidadSalida || 0);
+        const devuelta = Number(d.cantidadDevuelta || 0); // null -> 0
+        const vendido = Math.max(0, salida - devuelta);
+        const precio = Number(d.ProductoRuta?.precioVenta || 0);
+        return sum + (vendido * precio);
+      }, 0);
+
+      return {
+        rutaId: r.id,
+        fecha: r.fecha ?? null,
+        nombre: r.nombre ?? null,
+        direccion: r.direccion ?? null,
+        vehiculo: r.placa ?? null,
+        totalVendidoQ
+      };
+    });
+
+    return res.json(resultado);
+  } catch (error) {
+    console.error('Error en GET /rutas/devoluciones/resumen:', error);
+    return res.status(500).json({ error: 'Error obteniendo resumen de rutas' });
+  }
+});
+
+
+router.get('/:rutaId/detalle', async (req, res) => {
+  try {
+    const rutaId = Number(req.params.rutaId);
+    if (!rutaId) return res.status(400).json({ error: 'rutaId inválido' });
+
+    const ruta = await Ruta.findByPk(rutaId);
+    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
+
+    const detalles = await RutaDetalle.findAll({
+      where: { rutaId },
+      include: [{
+        model: Producto,
+        as: 'ProductoRuta',
+        required: true,
+        attributes: ['id', 'nombre', 'precioVenta']
+      }],
+      order: [['id', 'ASC']]
+    });
+
+    const items = detalles.map(d => {
+      const salida = Number(d.cantidadSalida ?? 0);
+      const dev = Number(d.cantidadDevuelta ?? 0);
+      const vendido = salida - dev;
+
+      const p = d.ProductoRuta;
+const precio = Number(p?.precioVenta || 0);
+
+return {
+  detalleId: d.id,
+  productoId: d.productoId,
+  producto: p?.nombre ?? '',
+  cantidadSalida: salida,
+  cantidadDevuelta: dev,
+  vendido,
+  precio,
+  total: Number((vendido * precio).toFixed(2))
+};
+
+    });
+
+    return res.json({
+      ruta: {
+        id: ruta.id,
+        fecha: ruta.fecha,
+        nombre: ruta.nombre,
+        direccion: ruta.direccion,
+        vehiculo: ruta.placa
+      },
+      items
+    });
+  } catch (error) {
+    console.error('Error en GET /rutas/:rutaId/detalle:', error);
+    return res.status(500).json({ error: 'Error obteniendo detalle de ruta' });
+  }
+});
+
+router.put('/detalle/:detalleId/devolucion', async (req, res) => {
+  try {
+    const detalleId = Number(req.params.detalleId);
+    const { cantidadDevuelta } = req.body;
+
+    const nuevaDev = Number(cantidadDevuelta);
+    if (!Number.isFinite(nuevaDev) || nuevaDev < 0) {
+      return res.status(400).json({ error: 'cantidadDevuelta inválida' });
+    }
+
+    const det = await RutaDetalle.findByPk(detalleId);
+    if (!det) return res.status(404).json({ error: 'Detalle no encontrado' });
+
+    const salida = Number(det.cantidadSalida ?? 0);
+    if (nuevaDev > salida) {
+      return res.status(400).json({ error: 'Devuelto no puede ser mayor que salida' });
+    }
+
+    det.cantidadDevuelta = nuevaDev;
+    await det.save();
+
+    return res.json({ ok: true, detalleId, cantidadDevuelta: nuevaDev });
+  } catch (error) {
+    console.error('Error PUT /rutas/detalle/:detalleId/devolucion:', error);
+    return res.status(500).json({ error: 'Error actualizando devolución' });
+  }
+});
+
+
 
 // =======================================================
 // GET /rutas/:id/pdf  → Generar y GUARDAR PDF de la ruta
@@ -83,61 +346,84 @@ router.get('/:id/pdf', async (req, res) => {
     const { id } = req.params;
 
     const ruta = await Ruta.findByPk(id, {
-  include: [
-    {
-      model: RutaDetalle,
-      as: 'DetallesRuta',
       include: [
-        { model: Producto, as: 'ProductoRuta' }
+        {
+          model: RutaDetalle,
+          as: 'DetallesRuta',
+          include: [{ model: Producto, as: 'ProductoRuta' }]
+        }
       ]
+    });
+
+    if (!ruta) {
+      return res.status(404).json({ error: 'Ruta no encontrada' });
     }
-  ]
-});
 
+    const { rutasDir } = getPaths();
 
+    if (!fs.existsSync(rutasPDFDir)) fs.mkdirSync(rutasPDFDir, { recursive: true });
 
-    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
-
-    const rutasDir = path.join(__dirname, '..', '..', 'rutasPDF');
-    if (!fs.existsSync(rutasDir)) fs.mkdirSync(rutasDir, { recursive: true });
-
-    const filePath = path.join(rutasDir, `Ruta_${id}.pdf`);
+    const filePath = path.join(rutasPDFDir, `Ruta_${id}.pdf`);
 
     const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
-    const writeStream = fs.createWriteStream(filePath);
-    doc.pipe(writeStream);
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
 
-    doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+    // =========================
+    // ENCABEZADO
+    // =========================
+    doc.font('Helvetica-Bold').fontSize(20)
+      .text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+
     doc.moveDown(0.5);
     doc.fontSize(14).text('HOJA DE RUTA', { align: 'center' });
     doc.moveDown(1);
 
-    const fechaRuta = ruta.fecha ? new Date(ruta.fecha).toLocaleDateString() : '';
-    doc.fontSize(11);
-    doc.text(`Ruta No: ${id}`);
+    doc.font('Helvetica').fontSize(11);
+
+    const fechaRuta = ruta.fecha
+      ? new Date(ruta.fecha).toLocaleDateString()
+      : '';
+
+    doc.text(`Ruta No: ${ruta.id}`);
     doc.text(`Fecha: ${fechaRuta}`);
     doc.text(`Piloto: ${ruta.piloto || ''}`);
-    if (ruta.placa) doc.text(`Placa: ${ruta.placa}`);
-    if (ruta.licencia) doc.text(`Licencia: ${ruta.licencia}`);
-    if (ruta.condicion) doc.text(`Condición: ${ruta.condicion}`);
-    if (ruta.nombre) doc.text(`Nombre: ${ruta.nombre}`);
-    if (ruta.direccion) doc.text(`Dirección: ${ruta.direccion}`);
+    doc.text(`Licencia: ${ruta.licencia || ''}`);
+    doc.text(`Condición: ${ruta.condicion || ''}`);
+    doc.text(`Nombre: ${ruta.nombre || ''}`);
+    doc.text(`Dirección: ${ruta.direccion || ''}`);
+
     doc.moveDown(1);
 
-    doc.font('Helvetica-Bold');
-    doc.text('CANT', 50);
-    doc.text('PRODUCTO', 100);
-    doc.text('P. UNIT', 360, undefined, { width: 80, align: 'right' });
-    doc.text('TOTAL', 450, undefined, { width: 80, align: 'right' });
+    // =========================
+    // TABLA MONOESPACIADA
+    // =========================
+ // =========================
+// HEADER TABLA
+// =========================
+doc.font('Courier-Bold').fontSize(11);
 
-    doc.moveDown(0.3).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(0.5);
-    doc.font('Helvetica');
+const yHeader = doc.y;
+
+doc.text(
+  'CANT   PRODUCTO                          P.UNIT      TOTAL      DEVOLUCIÓN',
+  50,
+  yHeader
+);
+
+// línea debajo del header
+doc.moveTo(40, yHeader + 18).lineTo(570, yHeader + 18).stroke();
+
+// ⬇️ FORZAMOS la Y inicial de las filas (CLAVE)
+doc.y = yHeader + 32;
+
+doc.font('Courier').fontSize(11);
+
+    doc.font('Courier').fontSize(11);
 
     let totalGeneral = 0;
 
-    const detalles = ruta.DetallesRuta || [];
-    detalles.forEach(det => {
+    (ruta.DetallesRuta || []).forEach(det => {
       const prod = det.ProductoRuta;
       const cant = Number(det.cantidadSalida || 0);
       const precio = Number(prod?.precioVenta || 0);
@@ -146,64 +432,42 @@ router.get('/:id/pdf', async (req, res) => {
 
       totalGeneral += subtotal;
 
-      const y = doc.y;
-      doc.text(String(cant), 50, y);
-      doc.text(nombre, 100, y, { width: 240 });
-      doc.text(`Q${precio.toFixed(2)}`, 360, y, { width: 80, align: 'right' });
-      doc.text(`Q${subtotal.toFixed(2)}`, 450, y, { width: 80, align: 'right' });
-      doc.moveDown(0.8);
+      const fila =
+        String(cant).padEnd(6, ' ') +
+        nombre.padEnd(32, ' ').slice(0, 32) +
+        `Q${precio.toFixed(2)}`.padStart(12, ' ') +
+        `Q${subtotal.toFixed(2)}`.padStart(11, ' ') +
+        '     ________';
+
+      doc.text(fila, 50, doc.y, { lineBreak: false });
+      doc.y += 14;
     });
 
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(0.5);
+    doc.moveTo(40, doc.y).lineTo(570, doc.y).stroke();
     doc.moveDown(1);
 
-    doc.font('Helvetica-Bold').fontSize(14)
-      .text(`TOTAL: Q${totalGeneral.toFixed(2)}`, 350, doc.y, { width: 200, align: 'right' });
+    // =========================
+    // TOTAL
+    // =========================
+    doc.font('Courier-Bold').fontSize(14);
+    doc.text(`TOTAL: Q${totalGeneral.toFixed(2)}`, 350);
 
     doc.end();
 
-    writeStream.on('finish', () => {
-      return res.sendFile(filePath);
-
+    stream.on('finish', () => {
+      res.sendFile(filePath);
     });
 
   } catch (error) {
     console.error('Error generando PDF de ruta:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Error generando PDF de la ruta',
       message: error.message
     });
   }
 });
 
-
-// ======================================
-// GET /rutas/:id  → Detalle con productos (para devolución)
-// ======================================
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const ruta = await Ruta.findByPk(id, {
-      include: [
-        {
-          model: RutaDetalle,
-          as: 'DetallesRuta',
-          include: [
-            { model: Producto, as: 'ProductoRuta' }
-          ]
-        }
-      ]
-    });
-
-    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
-
-    return res.json(ruta);
-  } catch (error) {
-    console.error('Error en GET /rutas/:id:', error);
-    return res.status(500).json({ error: 'Error cargando detalles de la ruta' });
-  }
-});
 
 
 // =======================
@@ -264,6 +528,43 @@ router.post('/:id/devolucion', async (req, res) => {
     return res.status(500).json({ error: 'Error guardando devolución de ruta', message: error.message });
   }
 });
+
+
+// ======================================
+// GET /rutas/:id  → Detalle con productos (para devolución)
+// ======================================
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const ruta = await Ruta.findByPk(id, {
+      include: [
+        {
+          model: RutaDetalle,
+          as: 'DetallesRuta',
+          include: [
+            { model: Producto, as: 'ProductoRuta' }
+          ]
+        }
+      ]
+    });
+
+    if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
+
+    return res.json(ruta);
+  } catch (error) {
+    console.error('Error en GET /rutas/:id:', error);
+    return res.status(500).json({ error: 'Error cargando detalles de la ruta' });
+  }
+});
+
+
+
+
+
+
+
+
 
 
 

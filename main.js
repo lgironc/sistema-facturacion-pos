@@ -1,20 +1,32 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
 
 console.log('✅ main.js cargado correctamente');
 
-let backendProcess;
 let win;
 
-// ==============================
-// 🔹 Helpers para manejo de PDF
-// ==============================
+// ✅ Forzar userData dentro de la carpeta del .exe (PORTABLE REAL)
+if (app.isPackaged) {
+  const portableDir = path.join(path.dirname(app.getPath('exe')), 'DataApp');
+  app.setPath('userData', portableDir);
+}
 
+// ==============================
+// ✅ Paths portables (DB + PDFs)
+// ==============================
+const { getPaths } = require('./src/utils/paths');
+const {
+  facturasPDFDir,
+  rutasPDFDir,
+  cierresPDFDir
+} = getPaths();
 
+// ==============================
+// 🔹 Helpers
+// ==============================
 function ensureFolder(folder) {
   if (!fs.existsSync(folder)) {
     fs.mkdirSync(folder, { recursive: true });
@@ -22,135 +34,103 @@ function ensureFolder(folder) {
   }
 }
 
-ensureFolder(path.join(__dirname, 'facturasPDF'));
-ensureFolder(path.join(__dirname, 'rutasPDF'));
-ensureFolder(path.join(__dirname, 'cierresPDF'));
+ensureFolder(facturasPDFDir);
+ensureFolder(rutasPDFDir);
+ensureFolder(cierresPDFDir);
 
-
-
-
-// Devuelve la ruta de archivo en disco a partir de la URL /facturas/:id/pdf
+// ==============================
+// 🔹 PDF paths
+// ==============================
 function getPdfPathFromUrl(originalUrl) {
+  // ✅ PROTECCIÓN CRÍTICA
+  if (!originalUrl || typeof originalUrl !== 'string') {
+    console.warn('⚠️ getPdfPathFromUrl recibió originalUrl inválido:', originalUrl);
+    return path.join(facturasPDFDir, `Reporte_${Date.now()}.pdf`);
+  }
+
   // FACTURAS
   let match = originalUrl.match(/\/facturas\/(\d+)\/pdf/);
   if (match) {
     const facturaId = match[1];
     const numeroFactura = `INT-${String(facturaId).padStart(4, '0')}`;
-    return path.join(__dirname, 'facturasPDF', `Factura_${numeroFactura}.pdf`);
+    return path.join(facturasPDFDir, `Factura_${numeroFactura}.pdf`);
   }
 
   // RUTAS
   match = originalUrl.match(/\/rutas\/(\d+)\/pdf/);
   if (match) {
     const rutaId = match[1];
-    return path.join(__dirname, 'rutasPDF', `Ruta_${rutaId}.pdf`);
+    return path.join(rutasPDFDir, `Ruta_${rutaId}.pdf`);
   }
 
-  // CIERRES
+  // CIERRES (por ID, si algún día los usas)
   match = originalUrl.match(/\/cierres\/(\d+)\/pdf/);
   if (match) {
     const cierreId = match[1];
-    return path.join(__dirname, 'cierresPDF', `Cierre_${cierreId}.pdf`);
+    return path.join(cierresPDFDir, `Cierre_${cierreId}.pdf`);
   }
 
-  // Fallback
-  return path.join(__dirname, 'facturasPDF', `Reporte_${Date.now()}.pdf`);
+  // 🧾 CIERRE DE CAJA por rango (finanzas)
+  if (originalUrl.startsWith('/finanzas/cierre/pdf')) {
+    try {
+      const u = new URL('http://localhost' + originalUrl);
+      const desde = u.searchParams.get('desde') || 'hoy';
+      const hasta = u.searchParams.get('hasta') || 'hoy';
+      return path.join(cierresPDFDir, `Cierre_${desde}_a_${hasta}.pdf`);
+    } catch (e) {
+      console.warn('⚠️ No se pudo parsear URL de cierre:', originalUrl);
+    }
+  }
+
+  // Fallback seguro
+  return path.join(facturasPDFDir, `Reporte_${Date.now()}.pdf`);
 }
 
-// Descarga el PDF SOLO si no existe todavía, y devuelve la ruta en disco
+
 async function descargarPdfSiNoExiste(url) {
   console.log('📌 descargarPdfSiNoExiste URL recibida:', url);
 
-  // Normalizamos URL lógica
-  const urlLogica = url.startsWith('http')
-    ? new URL(url).pathname
-    : url;
-
-  // Ruta física donde debería estar el PDF
+  const urlLogica = url.startsWith('http') ? new URL(url).pathname : url;
   const filePath = getPdfPathFromUrl(urlLogica);
 
-  // ✅ Si el PDF ya existe localmente, lo usamos
   if (fs.existsSync(filePath)) {
     console.log('📄 PDF local encontrado:', filePath);
     return filePath;
   }
 
-  // 🚚 RUTAS: pedir al backend que lo genere
-if (urlLogica.startsWith('/rutas/')) {
-  let fullUrl = `http://localhost:4000${urlLogica}`;
+  // Descargar/generar desde backend
+  let fullUrl = url.startsWith('http') ? url : `http://localhost:4000${urlLogica}`;
+  const client = fullUrl.startsWith('https') ? https : http;
 
-  console.log('[MAIN] Generando PDF de ruta desde:', fullUrl);
+  console.log('[MAIN] Descargando/Generando PDF desde:', fullUrl);
 
   await new Promise((resolve, reject) => {
-    http.get(fullUrl, (response) => {
+    client.get(fullUrl, (response) => {
       if (response.statusCode !== 200) {
-  let body = '';
-  response.on('data', chunk => body += chunk.toString());
-  response.on('end', () => {
-    reject(new Error(`Error generando PDF de ruta: ${response.statusCode} - ${body}`));
-  });
-  return;
-}
+        let body = '';
+        response.on('data', chunk => (body += chunk.toString()));
+        response.on('end', () => reject(new Error(`Error PDF ${response.statusCode} - ${body}`)));
+        return;
+      }
 
+      const fileStream = fs.createWriteStream(filePath);
+      response.pipe(fileStream);
 
-      // No usamos el stream, solo esperamos a que el backend lo genere
-      response.on('data', () => {});
-      response.on('end', resolve);
+      fileStream.on('finish', () => {
+        fileStream.close();
+        console.log(`✅ PDF guardado como: ${filePath}`);
+        resolve();
+      });
     }).on('error', reject);
   });
 
-  // ⏳ Esperar un momento a que se escriba en disco
-  await new Promise(res => setTimeout(res, 300));
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error('El backend no creó el PDF de la ruta');
-  }
-
   return filePath;
 }
-
-
-  // 🌐 FACTURAS / CIERRES → descargar por HTTP
-  let fullUrl = url;
-  if (!fullUrl.startsWith('http')) {
-    fullUrl = `http://localhost:4000${urlLogica}`;
-  }
-
-  console.log('[MAIN] Descargando PDF desde:', fullUrl);
-
-  const client = fullUrl.startsWith('https') ? https : http;
-
-  await new Promise((resolve, reject) => {
-    client
-      .get(fullUrl, (response) => {
-        if (response.statusCode !== 200) {
-          return reject(
-            new Error(`Error al descargar PDF: ${response.statusCode}`)
-          );
-        }
-
-        const fileStream = fs.createWriteStream(filePath);
-        response.pipe(fileStream);
-
-        fileStream.on('finish', () => {
-          fileStream.close();
-          console.log(`✅ PDF guardado como: ${filePath}`);
-          resolve();
-        });
-      })
-      .on('error', reject);
-  });
-
-  return filePath;
-}
-
 
 // ==============================
 // IPC: PDF
 // ==============================
-
-// 👉 Handler para abrir PDF (descarga si hace falta y luego lo abre)
-ipcMain.handle('abrir-pdf', async (event, url) => {
+ipcMain.handle('abrir-pdf', async (_event, url) => {
   console.log('📌 IPC abrir-pdf con URL:', url);
 
   try {
@@ -165,12 +145,11 @@ ipcMain.handle('abrir-pdf', async (event, url) => {
     return { success: true, path: filePath, error: null };
   } catch (error) {
     console.error('❌ Error general en abrir-pdf:', error);
-    return { success: false, error };
+    return { success: false, error: error.message };
   }
 });
 
-// 👉 Handler para SOLO descargar PDF (sin abrirlo)
-ipcMain.handle('descargar-pdf', async (event, url) => {
+ipcMain.handle('descargar-pdf', async (_event, url) => {
   console.log('📌 IPC descargar-pdf con URL:', url);
 
   try {
@@ -178,31 +157,43 @@ ipcMain.handle('descargar-pdf', async (event, url) => {
     return { success: true, path: filePath, error: null };
   } catch (error) {
     console.error('❌ Error general en descargar-pdf:', error);
-    return { success: false, error };
+    return { success: false, error: error.message };
   }
 });
 
 // ==============================
-// Backend + ventana
+// Backend embebido (MISMO proceso)
 // ==============================
-
-function iniciarBackend() {
-  console.log('Iniciando backend...');
-
-  // 👉 usar index.js de la RAÍZ del proyecto
-  const backendPath = path.join(__dirname, 'index.js');
-
-  backendProcess = spawn('node', [backendPath], { shell: true });
-
-  backendProcess.stdout.on('data', (data) =>
-    console.log(`BACKEND: ${data}`)
-  );
-  backendProcess.stderr.on('data', (data) =>
-    console.error(`BACKEND ERROR: ${data}`)
-  );
+function iniciarBackendEmbebido() {
+  console.log('🚀 Iniciando backend embebido...');
+  require(path.join(__dirname, 'index.js'));
 }
 
+// Esperar a que el backend responda /ping
+function esperarBackendListo(timeoutMs = 15000) {
+  const started = Date.now();
 
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      http.get('http://localhost:4000/ping', (res) => {
+        if (res.statusCode === 200) return resolve();
+        retry();
+      }).on('error', retry);
+
+      function retry() {
+        if (Date.now() - started > timeoutMs) {
+          return reject(new Error('Backend no respondió /ping a tiempo'));
+        }
+        setTimeout(tick, 300);
+      }
+    };
+    tick();
+  });
+}
+
+// ==============================
+// Ventana
+// ==============================
 function crearVentana() {
   win = new BrowserWindow({
     width: 1200,
@@ -217,14 +208,18 @@ function crearVentana() {
   win.loadURL('http://localhost:4000/pos');
 }
 
-app.whenReady().then(() => {
-  iniciarBackend();
-  // pequeño delay para que el backend levante
-  setTimeout(crearVentana, 2000);
+app.whenReady().then(async () => {
+  iniciarBackendEmbebido();
+
+  try {
+    await esperarBackendListo();
+    crearVentana();
+  } catch (e) {
+    console.error('❌ No se pudo iniciar backend:', e.message);
+    app.quit();
+  }
 });
 
 app.on('window-all-closed', () => {
-  if (backendProcess) backendProcess.kill();
   app.quit();
 });
-

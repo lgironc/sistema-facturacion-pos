@@ -1,26 +1,27 @@
 {
   "name": "sistema-facturacion",
   "version": "1.0.0",
-  "description": "Sistema de facturación con Electron y MongoDB portable",
+  "description": "Sistema de facturación con Electron y SQLite portable",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
-    "update:abonos": "node update_facturaId_abonos.js"
-
+    "pack:win": "electron-builder --win --dir",
+    "build": "electron-builder"
   },
   "build": {
     "appId": "com.sistemafacturacion.app",
     "productName": "Sistema de Facturación",
-    "directories": {
-      "output": "dist"
-    },
+    "directories": { "output": "dist" },
     "files": [
       "**/*",
       "!dist/**"
     ],
     "win": {
-      "target": "nsis"
+      "target": "dir",
+      "signAndEditExecutable": false,
+      "signtoolOptions": {
+        "sign": false
+      }
     }
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
-    "electron": "^38.3.0"
+    "electron": "^38.3.0",
+    "electron-builder": "^26.0.12"
   }
 }

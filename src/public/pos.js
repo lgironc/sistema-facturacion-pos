@@ -1322,6 +1322,11 @@ async function crearRuta() {
     rutaActualId = data.rutaId || data.id || null;
 
     mostrarToast('Ruta registrada correctamente ✅', 'success');
+    await refrescarRutasUI();
+    await cargarRutasDevolucion();
+await cargarRutasParaImprimir();
+
+
 
     // limpiar cantidades
     document.querySelectorAll('.input-salida-ruta').forEach(input => {
@@ -1521,6 +1526,8 @@ async function guardarDevolucionRuta() {
     }
 
     mostrarToast('Devolución guardada correctamente ✅', 'success');
+    await refrescarRutasUI();
+
 
     // Actualizar stock en pantalla y refrescar detalles
     await cargarProductos();
@@ -1532,6 +1539,307 @@ async function guardarDevolucionRuta() {
   }
 }
 
+
+let rutaImprimirId = null;
+
+
+function imprimirRutaSeleccionada() {
+  if (!rutaImprimirId) {
+    mostrarToast('Seleccione una ruta para imprimir', 'warning');
+    return;
+  }
+
+  const url = `/rutas/${rutaImprimirId}/pdf`;
+
+  if (typeof abrirFacturaPDF === 'function') {
+    abrirFacturaPDF(url);
+  } else if (window.electronAPI && window.electronAPI.abrirPDF) {
+    window.electronAPI.abrirPDF(url);
+  } else {
+    console.error('No hay método configurado para abrir PDFs');
+    mostrarToast('No se pudo abrir el PDF', 'danger');
+  }
+}
+
+// ============================
+// DEVOLUCIONES RUTA - HISTORIAL (TABLA PLANA)
+// ============================
+
+async function cargarDevolucionesRutaFlat() {
+  const desde = document.getElementById('devFiltroDesde').value;
+  const hasta = document.getElementById('devFiltroHasta').value;
+  const nombre = document.getElementById('devFiltroNombre').value.trim();
+  const direccion = document.getElementById('devFiltroDireccion').value.trim();
+  const vehiculo = document.getElementById('devFiltroVehiculo').value.trim();
+
+  const params = new URLSearchParams();
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  if (nombre) params.append('nombre', nombre);
+  if (direccion) params.append('direccion', direccion);
+  if (vehiculo) params.append('vehiculo', vehiculo);
+
+  const tbody = document.getElementById('tablaDevolucionesFlatBody');
+  const resumen = document.getElementById('devResumen');
+
+  tbody.innerHTML = `
+    <tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr>
+  `;
+  resumen.textContent = '';
+
+  try {
+    const res = await fetch(`${BASE}/rutas/devoluciones/resumen?${params.toString()}`);
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data?.error || 'Error en backend');
+
+    if (!Array.isArray(data) || data.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="5" class="text-center text-muted">No hay devoluciones con esos filtros.</td></tr>
+      `;
+      resumen.textContent = '0 resultados';
+      return;
+    }
+
+    resumen.textContent = `${data.length} resultado(s)`;
+
+    tbody.innerHTML = data.map(r => {
+      const total = Number(r.totalVendidoQ || 0).toFixed(2);
+
+      return `
+        <tr class="row-historial-ruta" data-ruta-id="${r.rutaId}" style="cursor:pointer;">
+          <td>${r.fecha ?? ''}</td>
+          <td>${escapeHtml(r.nombre ?? '')}</td>
+          <td>${escapeHtml(r.direccion ?? '')}</td>
+          <td>${escapeHtml(r.vehiculo ?? '')}</td>
+          <td class="text-end fw-bold">Q${total}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // click -> cargar detalle
+    document.querySelectorAll('.row-historial-ruta').forEach(tr => {
+      tr.addEventListener('click', async () => {
+        const rutaId = tr.getAttribute('data-ruta-id');
+        await cargarDetalleRutaParaEditar(rutaId);
+      });
+    });
+
+  } catch (err) {
+    console.error('Error obteniendo resumen devoluciones:', err);
+    alert(`Error cargando historial: ${err.message}`);
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error cargando historial.</td></tr>`;
+  }
+}
+
+function limpiarFiltrosDevoluciones() {
+  document.getElementById('devFiltroDesde').value = '';
+  document.getElementById('devFiltroHasta').value = '';
+  document.getElementById('devFiltroNombre').value = '';
+  document.getElementById('devFiltroDireccion').value = '';
+  document.getElementById('devFiltroVehiculo').value = '';
+
+  document.getElementById('devResumen').textContent = '';
+  document.getElementById('tablaDevolucionesFlatBody').innerHTML = `
+    <tr>
+      <td colspan="5" class="text-center text-muted">
+        Aún no has buscado devoluciones.
+      </td>
+    </tr>
+  `;
+}
+
+// Utilidad para evitar inyección HTML en tablas
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+// Eventos
+document.addEventListener('DOMContentLoaded', () => {
+  const btnBuscar = document.getElementById('btnBuscarDevoluciones');
+  const btnLimpiar = document.getElementById('btnLimpiarDevoluciones');
+
+  if (btnBuscar) btnBuscar.addEventListener('click', cargarDevolucionesRutaFlat);
+  if (btnLimpiar) btnLimpiar.addEventListener('click', limpiarFiltrosDevoluciones);
+
+  // Buscar al presionar Enter en cualquier filtro
+  ['devFiltroDesde','devFiltroHasta','devFiltroNombre','devFiltroDireccion','devFiltroVehiculo']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') cargarDevolucionesRutaFlat();
+      });
+    });
+});
+
+function q(v) {
+  return `Q${Number(v || 0).toFixed(2)}`;
+}
+
+async function cargarDetalleRutaParaEditar(rutaId) {
+  const card = document.getElementById('detalleRutaCard');
+  const titulo = document.getElementById('detalleRutaTitulo');
+  const tbody = document.getElementById('detalleRutaBody');
+  const totalCell = document.getElementById('detalleRutaTotal');
+
+  card.style.display = 'block';
+  tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>`;
+  totalCell.textContent = 'Q0.00';
+
+  try {
+    const res = await fetch(`${BASE}/rutas/${rutaId}/detalle`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Error cargando detalle');
+
+    const r = data.ruta;
+    titulo.textContent = `Detalle ruta #${r.id} — ${r.fecha} — ${r.nombre} — ${r.vehiculo}`;
+
+    let total = 0;
+
+    tbody.innerHTML = data.items.map(item => {
+      total += Number(item.total || 0);
+
+      return `
+        <tr data-detalle-id="${item.detalleId}">
+          <td>${escapeHtml(item.producto)}</td>
+          <td class="text-end">${item.cantidadSalida}</td>
+
+          <td class="text-end" style="width:120px;">
+            <input type="number"
+                   class="form-control form-control-sm text-end input-devuelto"
+                   min="0"
+                   max="${item.cantidadSalida}"
+                   value="${item.cantidadDevuelta}">
+          </td>
+
+          <td class="text-end fw-bold vendido-cell">${item.vendido}</td>
+          <td class="text-end">${q(item.precio)}</td>
+          <td class="text-end total-cell">${q(item.total)}</td>
+
+          <td class="text-center">
+            <button class="btn btn-sm btn-success btn-guardar-dev">Guardar</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    totalCell.textContent = q(total);
+
+    // recalcular vendido/total al cambiar devuelto (sin guardar todavía)
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const input = tr.querySelector('.input-devuelto');
+      const salida = Number(tr.children[1].textContent || 0);
+      const precioTxt = tr.children[4].textContent.replace('Q', '');
+      const precio = Number(precioTxt || 0);
+
+      input.addEventListener('input', () => {
+        let dev = Number(input.value || 0);
+        if (dev < 0) dev = 0;
+        if (dev > salida) dev = salida;
+        input.value = dev;
+
+        const vendido = salida - dev;
+        const totalLinea = vendido * precio;
+
+        tr.querySelector('.vendido-cell').textContent = vendido;
+        tr.querySelector('.total-cell').textContent = q(totalLinea);
+
+        // recalcular total general
+        let suma = 0;
+        tbody.querySelectorAll('.total-cell').forEach(td => {
+          suma += Number(td.textContent.replace('Q', '') || 0);
+        });
+        totalCell.textContent = q(suma);
+      });
+    });
+
+    // guardar por fila
+    tbody.querySelectorAll('.btn-guardar-dev').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tr = btn.closest('tr');
+        const detalleId = tr.getAttribute('data-detalle-id');
+        const devuelto = Number(tr.querySelector('.input-devuelto').value || 0);
+
+        btn.disabled = true;
+        const oldText = btn.textContent;
+        btn.textContent = '...';
+
+        try {
+          const resp = await fetch(`${BASE}/rutas/detalle/${detalleId}/devolucion`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cantidadDevuelta: devuelto })
+          });
+
+          const out = await resp.json();
+          if (!resp.ok) throw new Error(out?.error || 'Error guardando');
+
+          btn.textContent = 'OK';
+          setTimeout(() => (btn.textContent = oldText), 800);
+
+          // (Opcional) refrescar resumen para que cambie el total vendido Q arriba:
+          // await cargarDevolucionesRutaFlat();
+
+        } catch (e) {
+          alert(`No se pudo guardar: ${e.message}`);
+          btn.textContent = oldText;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+  }
+}
+
+// cerrar detalle
+document.getElementById('btnCerrarDetalleRuta')?.addEventListener('click', () => {
+  document.getElementById('detalleRutaCard').style.display = 'none';
+});
+
+async function cargarRutasParaImprimir() {
+  const select = document.getElementById('selectRutaImprimir');
+  const btn = document.getElementById('btnImprimirRutaSeleccionada');
+  if (!select) return;
+
+  // estado inicial
+  select.innerHTML = '<option value="">-- Cargando rutas... --</option>';
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(`${BASE}/rutas`, { headers: { 'Accept': 'application/json' } });
+    const rutas = await res.json();
+
+    if (!res.ok) {
+      console.error('GET /rutas falló:', rutas);
+      select.innerHTML = '<option value="">-- Error cargando rutas --</option>';
+      return;
+    }
+
+    select.innerHTML = '<option value="">-- Seleccione una ruta --</option>';
+
+    (rutas || []).forEach(r => {
+      const fechaStr = r.fecha ? new Date(r.fecha).toLocaleDateString() : '';
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `Ruta #${r.id} - ${fechaStr} - ${r.piloto || ''}`;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    console.error('Error cargando rutas para imprimir:', err);
+    select.innerHTML = '<option value="">-- Error cargando rutas --</option>';
+  }
+}
 
 // =============================
 // ⚙ CONFIGURACIÓN (localStorage)
@@ -1565,142 +1873,137 @@ function guardarConfiguracion() {
 }
 
 function toggleCamposPago() {
-  const tipoPago = document.getElementById('tipoPago').value;
+  const tipoPago = document.getElementById('tipoPago')?.value;
   const campoEfectivo = document.getElementById('campoEfectivo');
   const campoAbono = document.getElementById('campoAbono');
+
+  if (!campoEfectivo || !campoAbono) return;
 
   if (tipoPago === 'contado') {
     campoEfectivo.style.display = 'block';
     campoAbono.style.display = 'none';
-    document.getElementById('abonoCredito').value = ''; // limpiar
+    const abono = document.getElementById('abonoCredito');
+    if (abono) abono.value = '';
   } else {
     campoEfectivo.style.display = 'none';
     campoAbono.style.display = 'block';
-    document.getElementById('efectivoRecibido').value = ''; // limpiar
+    const ef = document.getElementById('efectivoRecibido');
+    if (ef) ef.value = '';
   }
 }
 
+// =========================================
+// 🔄 REFRESCAR UI DE RUTAS (GLOBAL)
+// =========================================
+async function refrescarRutasUI() {
+  // 1) productos/stock
+  await cargarProductos();
+  renderProductosRuta();
+
+  // 2) recargar selects
+  await cargarRutasDevolucion();
+  await cargarRutasParaImprimir();
+
+  // 3) recargar historial (si existe)
+  if (typeof cargarDevolucionesRutaFlat === 'function') {
+    await cargarDevolucionesRutaFlat();
+  }
+}
 
 // =========================================
-// 🚀 INICIALIZACIÓN GLOBAL (Corregida)
+// 🚀 INICIALIZACIÓN GLOBAL (ARREGLADA)
 // =========================================
 function init() {
-
-
-
+  // 🔹 cargas iniciales
   cargarProductos();
   cargarHistorial();
   cargarConfiguracion();
   cargarClientes();
   setupClienteAutocomplete();
   cargarMovimientosFinancieros();
+
   renderProductosRuta();
-  cargarRutasDevolucion(); 
+  cargarRutasDevolucion();
+  cargarRutasParaImprimir();
 
+  // ✅ Guardar configuración cuando cambien los switches
+  el('switchEliminarProductos')?.addEventListener('change', guardarConfiguracion);
+  el('switchEliminarClientes')?.addEventListener('change', guardarConfiguracion);
 
-// ✅ Guardar configuración cuando cambien los switches
-el('switchEliminarProductos')?.addEventListener('change', guardarConfiguracion);
-el('switchEliminarClientes')?.addEventListener('change', guardarConfiguracion);
-
-  // ✅ Crear producto
+  // ✅ Crear producto/cliente/facturar
   el('btnCrearProducto')?.addEventListener('click', crearProducto);
   el('btnCrearCliente')?.addEventListener('click', crearCliente);
   el('btnFacturar')?.addEventListener('click', facturar);
   el('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
   el('btnConfirmDelete')?.addEventListener('click', confirmarEliminar);
   el('btnSaveProductChanges')?.addEventListener('click', guardarCambiosProducto);
- 
+
+  // ✅ POS filtros
   el('search')?.addEventListener('input', renderProductosPOS);
+
+  // ✅ Historial inventario filtros
   el('filtroProductoHistorial')?.addEventListener('change', renderHistorial);
-el('filtroTipoHistorial')?.addEventListener('change', renderHistorial);
-el('buscarHistorial')?.addEventListener('input', renderHistorial);
-el('btnRefrescarHistorial')?.addEventListener('click', async () => {
-  await cargarHistorial();
-  renderHistorial();
-});
+  el('filtroTipoHistorial')?.addEventListener('change', renderHistorial);
+  el('buscarHistorial')?.addEventListener('input', renderHistorial);
+  el('btnRefrescarHistorial')?.addEventListener('click', async () => {
+    await cargarHistorial();
+    renderHistorial();
+  });
 
- el('btnGuardarMovimiento')?.addEventListener('click', guardarMovimientoFinanciero);
-el('btnCierrePDF')?.addEventListener('click', generarCierrePDF);
+  // ✅ Finanzas
+  el('btnGuardarMovimiento')?.addEventListener('click', guardarMovimientoFinanciero);
+  el('btnCierrePDF')?.addEventListener('click', generarCierrePDF);
 
-el('filtroTipoMov')?.addEventListener('change', renderMovimientosFinancieros);
-el('filtroFechaDesde')?.addEventListener('change', renderMovimientosFinancieros);
-el('filtroFechaHasta')?.addEventListener('change', renderMovimientosFinancieros);
-el('filtroBuscarMov')?.addEventListener('input', renderMovimientosFinancieros);
+  el('filtroTipoMov')?.addEventListener('change', renderMovimientosFinancieros);
+  el('filtroFechaDesde')?.addEventListener('change', renderMovimientosFinancieros);
+  el('filtroFechaHasta')?.addEventListener('change', renderMovimientosFinancieros);
+  el('filtroBuscarMov')?.addEventListener('input', renderMovimientosFinancieros);
 
+  // ✅ Créditos filtros
+  el('filtroCliente')?.addEventListener('input', cargarCreditos);
+  el('filtroEstado')?.addEventListener('change', cargarCreditos);
 
-
-el('filtroCliente')?.addEventListener('input', cargarCreditos);
-el('filtroEstado')?.addEventListener('change', cargarCreditos);
-
-
- // Rutas
+  // ✅ Rutas
   document.getElementById('btnGuardarRuta')?.addEventListener('click', crearRuta);
   document.getElementById('btnImprimirRuta')?.addEventListener('click', imprimirRuta);
 
-// Rutas - devolución
+  // ✅ Rutas - devolución
   document.getElementById('selectRutaDevolucion')?.addEventListener('change', cargarDetallesRutaDevolucion);
   document.getElementById('btnGuardarDevolucionRuta')?.addEventListener('click', guardarDevolucionRuta);
 
-  const rutasTab = document.getElementById('rutas-tab');
-  if (rutasTab) {
-    rutasTab.addEventListener('shown.bs.tab', () => {
-      // Cuando entro a la pestaña, pinto la tabla con los productos
-      renderProductosRuta();
-      cargarRutasDevolucion();
+  // ✅ Pestañas: al entrar recarga lo que toca (para que no tengas que “moverte” manualmente)
+  document.getElementById('creditos-tab')?.addEventListener('shown.bs.tab', cargarCreditos);
+  document.getElementById('finanzas-tab')?.addEventListener('shown.bs.tab', cargarMovimientosFinancieros);
+
+  document.getElementById('rutas-tab')?.addEventListener('shown.bs.tab', async () => {
+    renderProductosRuta();
+    await cargarRutasDevolucion();
+    await cargarRutasParaImprimir();
+  });
+
+  // ✅ Imprimir ruta guardada (UNA SOLA VEZ)
+  const selectRutaImprimir = document.getElementById('selectRutaImprimir');
+  const btnImprimirRutaSeleccionada = document.getElementById('btnImprimirRutaSeleccionada');
+
+  selectRutaImprimir?.addEventListener('change', () => {
+    rutaImprimirId = Number(selectRutaImprimir.value) || null;
+    if (btnImprimirRutaSeleccionada) btnImprimirRutaSeleccionada.disabled = !rutaImprimirId;
+  });
+
+  btnImprimirRutaSeleccionada?.addEventListener('click', imprimirRutaSeleccionada);
+
+  // ✅ (Opcional) Si tú quieres manejar altura manualmente, OK.
+  // Pero OJO: Bootstrap ya maneja show/active.
+  // Si lo de abajo te causa glitches, me decís y lo quitamos.
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tabButton => {
+    tabButton.addEventListener('shown.bs.tab', (event) => {
+      const targetSelector = event.target.getAttribute('data-bs-target');
+      const target = document.querySelector(targetSelector);
+      if (!target) return;
+
+      const tabContent = document.querySelector('.tab-content');
+      if (tabContent) tabContent.style.height = 'auto';
     });
-  }
-
-// ✅ Manejo de pestañas con Bootstrap y ajuste de altura
-
- document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tabButton => {
-  tabButton.addEventListener('shown.bs.tab', (event) => {
-    // Selector del contenido asociado a la pestaña
-    const targetSelector = event.target.getAttribute('data-bs-target');
-    const target = document.querySelector(targetSelector);
-
-    if (!target) {
-      console.warn('No se encontró tab-pane para:', targetSelector);
-      return; // evitamos el .classList sobre null
-    }
-
-    // Opcional: si quieres manejar tú las clases show/active
-    document.querySelectorAll('.tab-pane').forEach(pane => {
-      pane.classList.remove('show', 'active');
-    });
-    target.classList.add('show', 'active');
-
-    // Ajustar altura del contenedor de tabs
-    const tabContent = document.querySelector('.tab-content');
-    if (tabContent) {
-      tabContent.style.height = 'auto';
-    }
-  });
-});
-
-
-}
-
-const creditosTab = document.getElementById('creditos-tab');
-const resumenDiv = document.getElementById('resumenCreditos');
-
-if (creditosTab) {
-  // Mostrar resumen cuando entro a la pestaña Créditos
-  creditosTab.addEventListener('shown.bs.tab', () => {
-    cargarCreditos(); // se vuelve a cargar cada que entres
-  });
-
-  // Limpiar contenido cuando salgo
-  creditosTab.addEventListener('hidden.bs.tab', () => {
-    if (resumenDiv) resumenDiv.innerHTML = '';
-  });
-}
-
-
-// 🔹 Ingresos y Egresos
-const finanzasTab = document.getElementById('finanzas-tab');
-if (finanzasTab) {
-  finanzasTab.addEventListener('shown.bs.tab', () => {
-    cargarMovimientosFinancieros();
   });
 }
 

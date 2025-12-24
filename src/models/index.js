@@ -66,10 +66,7 @@ Factura.hasMany(MovimientoFinanciero,     { foreignKey: 'facturaId', as: 'Movimi
 // ====================
 
 // Una ruta tiene muchos detalles (productos que salen en la hoja)
-Ruta.hasMany(RutaDetalle, {
-  foreignKey: 'rutaId',
-  as: 'DetallesRuta'         // lista de filas de la hoja
-});
+Ruta.hasMany(RutaDetalle, {foreignKey: 'rutaId', as: 'DetallesRuta' });
 
 RutaDetalle.belongsTo(Ruta, {
   foreignKey: 'rutaId',

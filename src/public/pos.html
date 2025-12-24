@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sistema de Facturación POS</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
   <style>
     body {
       padding: 16px;
@@ -32,19 +33,7 @@
     .small-input {
       width: 72px;
     }
-    
   </style>
-
-  <style>
-.tab-content > .tab-pane {
-  display: none !important;
-}
-
-.tab-content > .active {
-  display: block !important;
-}
-</style>
-
 </head>
 
 <body>
@@ -54,55 +43,61 @@
     <!-- ✅ Navegación de pestañas -->
     <ul class="nav nav-tabs mb-3" id="posTabs" role="tablist">
       <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="pos-tab" data-bs-toggle="tab" data-bs-target="#posSection" type="button"
-          role="tab">🛒 POS</button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="productos-tab" data-bs-toggle="tab" data-bs-target="#productosSection"
-          type="button" role="tab">📦 Productos</button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="clientes-tab" data-bs-toggle="tab" data-bs-target="#clientesSection" type="button"
-          role="tab">👤 Clientes</button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="historial-tab" data-bs-toggle="tab" data-bs-target="#historialSection"
-          type="button" role="tab">📜 Historial Inventario</button>
+        <button class="nav-link active" id="pos-tab" data-bs-toggle="tab" data-bs-target="#posSection" type="button" role="tab">
+          🛒 POS
+        </button>
       </li>
 
       <li class="nav-item" role="presentation">
-      <button class="nav-link" id="creditos-tab" data-bs-toggle="tab" data-bs-target="#creditos" type="button" role="tab">
-       💳 Créditos
-      </button>
+        <button class="nav-link" id="productos-tab" data-bs-toggle="tab" data-bs-target="#productosSection" type="button" role="tab">
+          📦 Productos
+        </button>
       </li>
 
       <li class="nav-item" role="presentation">
-      <button class="nav-link" id="finanzas-tab" data-bs-toggle="tab" data-bs-target="#finanzasSection" type="button" role="tab">
-      📊 Ingresos y Egresos
-      </button>
+        <button class="nav-link" id="clientes-tab" data-bs-toggle="tab" data-bs-target="#clientesSection" type="button" role="tab">
+          👤 Clientes
+        </button>
       </li>
 
       <li class="nav-item" role="presentation">
-      <button class="nav-link" id="rutas-tab"
-          data-bs-toggle="tab" data-bs-target="#rutasSection"
-          type="button" role="tab">
-      🚚 Rutas 
-      </button>
+        <button class="nav-link" id="historial-tab" data-bs-toggle="tab" data-bs-target="#historialSection" type="button" role="tab">
+          📜 Historial Inventario
+        </button>
       </li>
-
 
       <li class="nav-item" role="presentation">
-      <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab">⚙️ Configuración</button>
+        <button class="nav-link" id="creditos-tab" data-bs-toggle="tab" data-bs-target="#creditos" type="button" role="tab">
+          💳 Créditos
+        </button>
       </li>
 
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="finanzas-tab" data-bs-toggle="tab" data-bs-target="#finanzasSection" type="button" role="tab">
+          📊 Ingresos y Egresos
+        </button>
+      </li>
 
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="rutas-tab" data-bs-toggle="tab" data-bs-target="#rutasSection" type="button" role="tab">
+          🚚 Rutas
+        </button>
+      </li>
+
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab">
+          ⚙️ Configuración
+        </button>
+      </li>
     </ul>
 
     <!-- ✅ Contenido de pestañas -->
+    <!-- ⚠️ IMPORTANTE: dentro de tab-content SOLO van tab-pane.
+         Los modales y toast van FUERA, abajo (para evitar espacios raros). -->
     <div class="tab-content" id="posTabsContent">
 
       <!-- 🛒 POS -->
-      <div class="tab-pane fade show active" id="posSection" role="tabpanel">
+      <div class="tab-pane fade show active" id="posSection" role="tabpanel" aria-labelledby="pos-tab">
         <div class="row g-3">
           <div class="col-lg-7">
             <div class="card">
@@ -111,6 +106,7 @@
                   <input id="search" type="text" class="form-control" placeholder="Buscar producto..." />
                   <button id="btnRefrescar" class="btn btn-outline-secondary">Refrescar</button>
                 </div>
+
                 <div class="table-responsive" style="max-height: 60vh; overflow:auto;">
                   <table class="table table-sm table-hover">
                     <thead class="table-light">
@@ -124,6 +120,7 @@
                     <tbody id="productosBody"></tbody>
                   </table>
                 </div>
+
               </div>
             </div>
           </div>
@@ -132,6 +129,7 @@
             <div class="card">
               <div class="card-body">
                 <h5 class="mb-3">Carrito</h5>
+
                 <div class="table-responsive">
                   <table class="table table-sm cart-table">
                     <thead class="table-light">
@@ -154,63 +152,55 @@
                   </table>
                 </div>
 
-               <div class="mb-3">
-  <label for="clienteInput" class="form-label">Cliente (por nombre o NIT)</label>
-   <div class="position-relative">
-    <!-- 🔍 Input donde escribes el nombre o NIT -->
-    <input
-      type="text"
-      id="clienteInput"
-      class="form-control"
-      placeholder="Buscar cliente o ingresar NIT..."
-      autocomplete="off"
-    >
+                <div class="mb-3">
+                  <label for="clienteInput" class="form-label">Cliente (por nombre o NIT)</label>
+                  <div class="position-relative">
+                    <input
+                      type="text"
+                      id="clienteInput"
+                      class="form-control"
+                      placeholder="Buscar cliente o ingresar NIT..."
+                      autocomplete="off"
+                    >
 
-    <!-- 🔒 Aquí guardaremos el id del cliente seleccionado -->
-    <input type="hidden" id="clienteId">
+                    <input type="hidden" id="clienteId">
 
-    <!-- 📜 Lista de sugerencias -->
-    <ul
-      id="clienteSugerencias"
-      class="list-group position-absolute w-100"
-      style="z-index: 2000; display: none;"
-    ></ul>
-  </div>
-</div>
+                    <ul
+                      id="clienteSugerencias"
+                      class="list-group position-absolute w-100"
+                      style="z-index: 2000; display: none;"
+                    ></ul>
+                  </div>
+                </div>
 
-<div class="mb-3">
-  <label for="tipoPago" class="form-label">Tipo de pago</label>
-  <select id="tipoPago" class="form-select" onchange="toggleCamposPago()">
-    <option value="contado">Contado</option>
-    <option value="credito">Crédito</option>
-  </select>
-</div>
+                <div class="mb-3">
+                  <label for="tipoPago" class="form-label">Tipo de pago</label>
+                  <select id="tipoPago" class="form-select" onchange="toggleCamposPago()">
+                    <option value="contado">Contado</option>
+                    <option value="credito">Crédito</option>
+                  </select>
+                </div>
 
-<!-- Campo efectivo (solo se muestra si es contado) -->
-<div class="mb-3" id="campoEfectivo" style="display: block;">
-  <label for="efectivoRecibido" class="form-label">Efectivo recibido (Q)</label>
-  <input type="number" id="efectivoRecibido" class="form-control" placeholder="Ingrese monto recibido">
-</div>
+                <div class="mb-3" id="campoEfectivo" style="display: block;">
+                  <label for="efectivoRecibido" class="form-label">Efectivo recibido (Q)</label>
+                  <input type="number" id="efectivoRecibido" class="form-control" placeholder="Ingrese monto recibido">
+                </div>
 
-<!-- Campo abono (solo se muestra si es crédito) -->
-<div class="mb-3" id="campoAbono" style="display: none;">
-  <label for="abonoCredito" class="form-label">Abono inicial (Q)</label>
-  <input type="number" id="abonoCredito" class="form-control" placeholder="Ingrese abono inicial (opcional)">
-</div>
-
+                <div class="mb-3" id="campoAbono" style="display: none;">
+                  <label for="abonoCredito" class="form-label">Abono inicial (Q)</label>
+                  <input type="number" id="abonoCredito" class="form-control" placeholder="Ingrese abono inicial (opcional)">
+                </div>
 
                 <div class="sticky-actions d-grid gap-2">
                   <button id="btnFacturar" class="btn btn-primary btn-lg">Facturar</button>
                   <button id="btnAbrirPDF" class="btn btn-secondary w-100 mt-2" style="display: none;">
                     📄 Abrir PDF de la última factura
                   </button>
-                  <!-- Contenedor para mensajes -->
-<div id="result" class="mt-2 text-success fw-bold"></div>
-<div id="error" class="mt-2 text-danger"></div>
 
-              
-
+                  <div id="result" class="mt-2 text-success fw-bold"></div>
+                  <div id="error" class="mt-2 text-danger"></div>
                 </div>
+
               </div>
             </div>
 
@@ -223,7 +213,7 @@
       </div>
 
       <!-- 📦 PRODUCTOS -->
-      <div class="tab-pane fade" id="productosSection" role="tabpanel">
+      <div class="tab-pane fade" id="productosSection" role="tabpanel" aria-labelledby="productos-tab">
         <div class="card">
           <div class="card-body">
             <h5 class="mb-3">Gestión de Productos</h5>
@@ -233,12 +223,10 @@
                 <input id="prodNombre" type="text" class="form-control" placeholder="Nombre del producto" />
               </div>
               <div class="col-md-3">
-                <input id="prodCosto" type="number" step="0.01" min="0" class="form-control"
-                  placeholder="Costo de compra" />
+                <input id="prodCosto" type="number" step="0.01" min="0" class="form-control" placeholder="Costo de compra" />
               </div>
               <div class="col-md-3">
-                <input id="prodPrecio" type="number" step="0.01" min="0" class="form-control"
-                  placeholder="Precio de venta" />
+                <input id="prodPrecio" type="number" step="0.01" min="0" class="form-control" placeholder="Precio de venta" />
               </div>
               <div class="col-md-2">
                 <input id="prodStock" type="number" min="0" class="form-control" placeholder="Stock" />
@@ -263,33 +251,34 @@
                 <tbody id="productosAdminBody"></tbody>
               </table>
             </div>
+
           </div>
         </div>
       </div>
 
       <!-- 📜 HISTORIAL INVENTARIO -->
-      <div class="tab-pane fade" id="historialSection" role="tabpanel">
+      <div class="tab-pane fade" id="historialSection" role="tabpanel" aria-labelledby="historial-tab">
         <div class="card">
           <div class="card-body">
             <h5 class="mb-3">Historial de Inventario</h5>
+
             <div class="d-flex justify-content-end mb-2">
               <button id="btnRefrescarHistorial" class="btn btn-outline-secondary btn-sm">Refrescar</button>
             </div>
 
             <div class="d-flex align-items-center mb-3 gap-2">
-    <select id="filtroProductoHistorial" class="form-select w-auto">
-        <option value="">Todos los productos</option>
-    </select>
+              <select id="filtroProductoHistorial" class="form-select w-auto">
+                <option value="">Todos los productos</option>
+              </select>
 
-    <select id="filtroTipoHistorial" class="form-select w-auto">
-        <option value="">Todos los movimientos</option>
-        <option value="entrada">Entradas</option>
-        <option value="venta">Ventas</option>
-    </select>
+              <select id="filtroTipoHistorial" class="form-select w-auto">
+                <option value="">Todos los movimientos</option>
+                <option value="entrada">Entradas</option>
+                <option value="venta">Ventas</option>
+              </select>
 
-    <input type="text" id="buscarHistorial" class="form-control w-auto" placeholder="Buscar por producto...">
-</div>
-
+              <input type="text" id="buscarHistorial" class="form-control w-auto" placeholder="Buscar por producto...">
+            </div>
 
             <div class="table-responsive">
               <table class="table table-hover table-sm">
@@ -305,12 +294,13 @@
                 <tbody id="historialBody"></tbody>
               </table>
             </div>
+
           </div>
         </div>
       </div>
 
       <!-- 👤 CLIENTES -->
-      <div class="tab-pane fade" id="clientesSection" role="tabpanel">
+      <div class="tab-pane fade" id="clientesSection" role="tabpanel" aria-labelledby="clientes-tab">
         <div class="card">
           <div class="card-body">
             <h5 class="mb-3">Gestión de Clientes</h5>
@@ -342,516 +332,606 @@
                     <th>Teléfono</th>
                     <th>NIT</th>
                     <th>Dirección</th>
-                    
                     <th class="text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="clientesBody"></tbody>
               </table>
             </div>
+
           </div>
         </div>
       </div>
 
-    
-  
-
-  <!-- ✅ MODAL: Editar Producto -->
-<div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header bg-warning">
-        <h5 class="modal-title" id="editProductModalLabel">
-          ✏️ Editar Producto
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <form id="editProductForm">
-          <input type="hidden" id="editProductId">
-
-          <div class="mb-3">
-            <label for="editProductName" class="form-label">Nombre</label>
-            <input type="text" id="editProductName" class="form-control" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="editProductCost" class="form-label">Precio de compra</label>
-            <input type="number" id="editProductCost" class="form-control" step="0.01" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="editProductPrice" class="form-label">Precio de venta</label>
-            <input type="number" id="editProductPrice" class="form-control" step="0.01" required>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Stock actual</label>
-            <input type="number" id="editProductCurrentStock" class="form-control" disabled>
-          </div>
-
-          <div class="mb-3">
-            <label for="editProductAddStock" class="form-label">Agregar stock (+)</label>
-            <input type="number" id="editProductAddStock" class="form-control" step="1" value="0">
-            <div class="form-text">Si no deseas agregar stock, déjalo en 0.</div>
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-warning" id="btnSaveProductChanges">Guardar cambios</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<!-- ✅ Contenedor para los Toasts -->
-<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;"></div>
-
-<!-- ✅ Modal de confirmación: Eliminar producto -->
-<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-3">
-      <div class="modal-header bg-danger text-white">
-        <h5 class="modal-title">Eliminar producto</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body">
-        ¿Seguro que deseas eliminar <strong id="deleteProductName">este producto</strong>?
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-danger" id="btnConfirmDelete">Eliminar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div id="resumenCreditos" class="row g-3 mb-3">
-  <!-- Aquí se cargarán los datos automáticamente desde JS -->
-</div>
-
-
-<div class="tab-pane fade" id="creditos" role="tabpanel" aria-labelledby="creditos-tab">
-  <div class="card mt-3">
-    <div class="card-body">
-      <h5 class="mb-3">Cuentas por Cobrar (Créditos)</h5>
-      <p class="text-muted">Aquí se mostrarán las facturas pendientes o parcialmente pagadas.</p>
-
-      <div class="row mb-3">
-  <div class="col-md-4">
-    <label for="filtroCliente" class="form-label">Buscar cliente:</label>
-    <input type="text" id="filtroCliente" class="form-control" placeholder="Ingrese nombre del cliente...">
-  </div>
-
-  <div class="col-md-3">
-    <label for="filtroEstado" class="form-label">Estado:</label>
-    <select id="filtroEstado" class="form-select">
-      <option value="todos">Todos</option>
-      <option value="pendiente">Pendientes</option>
-      <option value="parcial">Parciales</option>
-      <option value="pagado">Pagados</option>
-    </select>
-  </div>
-</div>
-
-
-
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div>
-    <label for="filtroEstado" class="form-label mb-0 me-2">Estado:</label>
-    <select id="filtroEstado" class="form-select form-select-sm w-auto">
-      <option value="todos">Todos</option>
-      <option value="pendiente">Pendiente</option>
-      <option value="parcial">Parcial</option>
-      <option value="pagado">Pagado</option>
-    </select>
-  </div>
-
-  <div>
-    <label class="form-label mb-0">Último abono:</label>
-    <span id="infoFechasAbono" class="ms-2 text-muted small">(Se mostrará por crédito)</span>
-  </div>
-</div>
-
-
-      <div class="table-responsive">
-        <table class="table table-bordered table-hover table-sm">
-          <thead class="table-light">
-            <tr>
-              <th>N° Factura</th>
-              <th>Cliente</th>
-              <th>Total</th>
-              <th>Abonado</th>
-              <th>Saldo</th>
-              <th>Último abono</th>
-              <th>Estado</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody id="tablaCreditosBody">
-            <tr>
-              <td colspan="7" class="text-center text-muted">No hay datos cargados aún.</td>
-            </tr>
-          </tbody>
-          </table>
-        </div>
-    </div>
-  </div>
-</div>
-
-<!-- 💰 Modal para registrar abono -->
-<div class="modal fade" id="abonoModal" tabindex="-1" aria-labelledby="abonoModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title" id="abonoModalLabel">Registrar abono</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="cuentaAbonoId">
-        <p><strong>Saldo pendiente:</strong> <span id="saldoPendienteTexto">Q0.00</span></p>
-
-        <div class="mb-3">
-          <label for="montoAbono" class="form-label">Monto a abonar (Q)</label>
-          <input type="number" id="montoAbono" class="form-control" min="0" step="0.01" placeholder="Ingrese el abono">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-primary" onclick="guardarAbono()">Guardar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- 📜 Modal de historial de abonos -->
-<div class="modal fade" id="historialAbonoModal" tabindex="-1" aria-labelledby="historialAbonoModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header bg-secondary text-white">
-        <h5 class="modal-title" id="historialAbonoModalLabel">Historial de abonos</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body">
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered">
-            <thead class="table-light">
-              <tr>
-                <th>Monto</th>
-                <th>Descripción</th>
-                <th>Fecha</th>
-              </tr>
-            </thead>
-            <tbody id="historialAbonoBody">
-              <tr>
-                <td colspan="3" class="text-center text-muted">Cargando...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-
-
-<div class="tab-pane fade" id="finanzasSection" role="tabpanel">
-
-  <div class="card mt-3">
-    <div class="card-body">
-
-      <h5 class="mb-3">Cierre de caja</h5>
-
-<div class="row g-2 mb-3">
-  <div class="col-md-3">
-    <label class="form-label">Desde</label>
-    <input type="date" id="cierreDesde" class="form-control">
-  </div>
-  <div class="col-md-3">
-    <label class="form-label">Hasta</label>
-    <input type="date" id="cierreHasta" class="form-control">
-  </div>
-  <div class="col-md-3 d-flex align-items-end">
-    <button id="btnCierrePDF" class="btn btn-outline-secondary w-100">
-      📄 Generar PDF de cierre
-    </button>
-  </div>
-</div>
-
-<hr>
-
-
-      <h5 class="mb-3">Registrar movimiento financiero</h5>
-
-      <div class="row g-2 mb-3">
-        <div class="col-md-3">
-          <label class="form-label">Tipo de movimiento</label>
-          <select id="movTipo" class="form-control">
-            <option value="ingreso">Ingreso</option>
-            <option value="egreso">Egreso</option>
-          </select>
+      <!-- 💳 CRÉDITOS -->
+      <div class="tab-pane fade" id="creditos" role="tabpanel" aria-labelledby="creditos-tab">
+        <!-- ✅ Lo dejamos DENTRO de la pestaña de créditos (no fuera) -->
+        <div id="resumenCreditos" class="row g-3 mb-3">
+          <!-- Aquí se cargarán los datos automáticamente desde JS -->
         </div>
 
-        <div class="col-md-3">
-          <label class="form-label">Monto Q</label>
-          <input type="number" id="movMonto" class="form-control" placeholder="0.00">
-        </div>
+        <div class="card mt-3">
+          <div class="card-body">
+            <h5 class="mb-3">Cuentas por Cobrar (Créditos)</h5>
+            <p class="text-muted">Aquí se mostrarán las facturas pendientes o parcialmente pagadas.</p>
 
-        <div class="col-md-6">
-          <label class="form-label">Descripción (opcional)</label>
-          <input type="text" id="movDescripcion" class="form-control" placeholder="Ej: Pago de luz, ajuste, etc.">
-        </div>
-      </div>
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <label for="filtroCliente" class="form-label">Buscar cliente:</label>
+                <input type="text" id="filtroCliente" class="form-control" placeholder="Ingrese nombre del cliente...">
+              </div>
 
-      <button id="btnGuardarMovimiento" class="btn btn-primary mb-2">
-        Guardar movimiento
-      </button>
+              <div class="col-md-3">
+                <label for="filtroEstado" class="form-label">Estado:</label>
+                <select id="filtroEstado" class="form-select">
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="parcial">Parciales</option>
+                  <option value="pagado">Pagados</option>
+                </select>
+              </div>
 
-      <hr>
-
-      <!-- 🔹 Resumen superior -->
-      <div id="resumenFinanciero" class="row g-2 mb-3"></div>
-
- <!-- 🔍 Filtros de movimientos -->
-<div class="row g-2 mb-3">
-  <div class="col-md-3">
-    <label class="form-label">Tipo</label>
-    <select id="filtroTipoMov" class="form-control">
-      <option value="todos">Todos</option>
-      <option value="solo_ingresos">Solo ingresos</option>
-      <option value="solo_egresos">Solo egresos</option>
-    </select>
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">Desde</label>
-    <input type="date" id="filtroFechaDesde" class="form-control">
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">Hasta</label>
-    <input type="date" id="filtroFechaHasta" class="form-control">
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">Buscar</label>
-    <input type="text"
-           id="filtroBuscarMov"
-           class="form-control"
-           placeholder="Buscar por descripción, tipo o monto…">
-  </div>
-</div>
-
-</div>
-
-      <h5 class="mb-3">Historial de movimientos</h5>
-
-      <div class="table-responsive">
-        <table class="table table-hover table-sm">
-          <thead class="table-light">
-            <tr>
-              <th>Tipo</th>
-              <th class="text-end">Monto (Q)</th>
-              <th>Descripción</th>
-              <th class="text-end">Fecha</th>
-            </tr>
-          </thead>
-          <tbody id="finanzasBody"></tbody>
-        </table>
-      </div>
-
-    </div>
-  </div>
-
-</div>
-
-<!-- ===========================
-     TAB RUTAS
-=========================== -->
-<div class="tab-pane fade" id="rutasSection" role="tabpanel" aria-labelledby="rutas-tab">
-
-  <h4 class="mb-3">Salida de ruta (camión)</h4>  <div class="card mt-3">
-    <div class="card-body">
-
-      <!-- Encabezado tipo Excel -->
-  <div class="card mb-3">
-    <div class="card-body">
-
-      <div class="row mb-2">
-        <div class="col-md-6">
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Fecha:</div>
-            <div class="col-8">
-              <input type="date" id="rutaFecha" class="form-control form-control-sm">
+              <div class="col-md-5 d-flex align-items-end">
+                <div>
+                  <label class="form-label mb-0">Último abono:</label>
+                  <span id="infoFechasAbono" class="ms-2 text-muted small">(Se mostrará por crédito)</span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Nombre:</div>
-            <div class="col-8">
-              <input type="text" id="rutaNombre" class="form-control form-control-sm" placeholder="Luis">
-            </div>
-          </div>
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Dirección:</div>
-            <div class="col-8">
-              <input type="text" id="rutaDireccion" class="form-control form-control-sm" placeholder="Opcional">
-            </div>
-          </div>
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Piloto:</div>
-            <div class="col-8">
-              <input type="text" id="rutaPiloto" class="form-control form-control-sm" placeholder="Nombre del piloto">
-            </div>
-          </div>
-        </div>
 
-         <div class="col-md-6">
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Licencia:</div>
-            <div class="col-8">
-              <input type="text" id="rutaLicencia" class="form-control form-control-sm" placeholder="Opcional">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>N° Factura</th>
+                    <th>Cliente</th>
+                    <th>Total</th>
+                    <th>Abonado</th>
+                    <th>Saldo</th>
+                    <th>Último abono</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="tablaCreditosBody">
+                  <tr>
+                    <!-- ✅ eran 8 columnas, no 7 -->
+                    <td colspan="8" class="text-center text-muted">No hay datos cargados aún.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Condición:</div>
-            <div class="col-8">
-              <input type="text" id="rutaCondicion" class="form-control form-control-sm" placeholder="Contado / Crédito / etc.">
-            </div>
-          </div>
-          <div class="row mb-2">
-            <div class="col-4 text-end fw-bold">Placa:</div>
-            <div class="col-8">
-              <input type="text" id="rutaPlaca" class="form-control form-control-sm" placeholder="P-123ABC">
-            </div>
+
           </div>
         </div>
       </div>
 
-    </div>
-  </div>
+      <!-- 📊 FINANZAS -->
+      <div class="tab-pane fade" id="finanzasSection" role="tabpanel" aria-labelledby="finanzas-tab">
+        <div class="card mt-3">
+          <div class="card-body">
 
-        <!-- Tabla de productos estilo Excel -->
-  <div class="table-responsive mb-2">
-    <table class="table table-sm align-middle">
-      <thead class="table-light">
-        <tr>
-    <th style="width: 80px;">Cantidad</th>
-    <th>Descripción</th>
-    <th style="width: 120px;" class="text-center">Unidad</th>
-    <th style="width: 120px;" class="text-end">Precio</th>
-    <th style="width: 140px;" class="text-end">Total</th>
-  </tr>
-</thead>
-<tbody id="rutasProductosBody"></tbody>
+            <h5 class="mb-3">Cierre de caja</h5>
 
-        </table>
+            <div class="row g-2 mb-3">
+              <div class="col-md-3">
+                <label class="form-label">Desde</label>
+                <input type="date" id="cierreDesde" class="form-control">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Hasta</label>
+                <input type="date" id="cierreHasta" class="form-control">
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
+                <button id="btnCierrePDF" class="btn btn-outline-secondary w-100">
+                  📄 Generar PDF de cierre
+                </button>
+              </div>
+            </div>
+
+            <hr>
+
+            <h5 class="mb-3">Registrar movimiento financiero</h5>
+
+            <div class="row g-2 mb-3">
+              <div class="col-md-3">
+                <label class="form-label">Tipo de movimiento</label>
+                <select id="movTipo" class="form-control">
+                  <option value="ingreso">Ingreso</option>
+                  <option value="egreso">Egreso</option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Monto Q</label>
+                <input type="number" id="movMonto" class="form-control" placeholder="0.00">
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Descripción (opcional)</label>
+                <input type="text" id="movDescripcion" class="form-control" placeholder="Ej: Pago de luz, ajuste, etc.">
+              </div>
+            </div>
+
+            <button id="btnGuardarMovimiento" class="btn btn-primary mb-2">
+              Guardar movimiento
+            </button>
+
+            <hr>
+
+            <div id="resumenFinanciero" class="row g-2 mb-3"></div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-md-3">
+                <label class="form-label">Tipo</label>
+                <select id="filtroTipoMov" class="form-control">
+                  <option value="todos">Todos</option>
+                  <option value="solo_ingresos">Solo ingresos</option>
+                  <option value="solo_egresos">Solo egresos</option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Desde</label>
+                <input type="date" id="filtroFechaDesde" class="form-control">
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Hasta</label>
+                <input type="date" id="filtroFechaHasta" class="form-control">
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Buscar</label>
+                <input type="text" id="filtroBuscarMov" class="form-control" placeholder="Buscar por descripción, tipo o monto…">
+              </div>
+            </div>
+
+            <h5 class="mb-3">Historial de movimientos</h5>
+
+            <div class="table-responsive">
+              <table class="table table-hover table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>Tipo</th>
+                    <th class="text-end">Monto (Q)</th>
+                    <th>Descripción</th>
+                    <th class="text-end">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="finanzasBody"></tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
       </div>
-      
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div id="rutasMensaje" class="small text-muted"></div>
-    <div class="fw-bold">
-      Total ruta: Q <span id="rutaTotalGeneral">0.00</span>
-    </div>
+
+      <!-- 🚚 RUTAS -->
+      <div class="tab-pane fade" id="rutasSection" role="tabpanel" aria-labelledby="rutas-tab">
+        <h4 class="mb-3">Salida de ruta (camión)</h4>
+
+        <div class="card mt-3">
+          <div class="card-body">
+
+            <!-- Encabezado tipo Excel -->
+            <div class="card mb-3">
+              <div class="card-body">
+
+                <div class="row mb-2">
+                  <div class="col-md-6">
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Fecha:</div>
+                      <div class="col-8">
+                        <input type="date" id="rutaFecha" class="form-control form-control-sm">
+                      </div>
+                    </div>
+
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Nombre:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaNombre" class="form-control form-control-sm" placeholder="Luis">
+                      </div>
+                    </div>
+
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Dirección:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaDireccion" class="form-control form-control-sm" placeholder="Opcional">
+                      </div>
+                    </div>
+
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Piloto:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaPiloto" class="form-control form-control-sm" placeholder="Nombre del piloto">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="col-md-6">
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Licencia:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaLicencia" class="form-control form-control-sm" placeholder="Opcional">
+                      </div>
+                    </div>
+
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Condición:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaCondicion" class="form-control form-control-sm" placeholder="Contado / Crédito / etc.">
+                      </div>
+                    </div>
+
+                    <div class="row mb-2">
+                      <div class="col-4 text-end fw-bold">Placa:</div>
+                      <div class="col-8">
+                        <input type="text" id="rutaPlaca" class="form-control form-control-sm" placeholder="P-123ABC">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Tabla de productos -->
+            <div class="table-responsive mb-2">
+              <table class="table table-sm align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 80px;">Cantidad</th>
+                    <th>Descripción</th>
+                    <th style="width: 120px;" class="text-center">Unidad</th>
+                    <th style="width: 120px;" class="text-end">Precio</th>
+                    <th style="width: 140px;" class="text-end">Total</th>
+                  </tr>
+                </thead>
+                <tbody id="rutasProductosBody"></tbody>
+              </table>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="fw-bold">
+                Total ruta: Q <span id="rutaTotalGeneral">0.00</span>
+              </div>
+            </div>
+
+            <div class="d-flex gap-2 mb-4">
+              <button id="btnGuardarRuta" class="btn btn-primary">Guardar salida de ruta</button>
+              <button id="btnImprimirRuta" class="btn btn-outline-secondary" disabled>Imprimir hoja de ruta</button>
+            </div>
+
+            <hr>
+
+            <!-- DEVOLUCIÓN DE RUTA -->
+            <div class="card mt-4">
+              <div class="card-header">Devolución de ruta</div>
+              <div class="card-body">
+
+                <div class="row g-2 mb-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Ruta</label>
+                    <select id="selectRutaDevolucion" class="form-select form-select-sm">
+                      <option value="">-- Seleccione una ruta --</option>
+                    </select>
+                  </div>
+                  <div class="col-md-8 d-flex align-items-end">
+                    <span id="infoRutaDevolucion" class="text-muted"></span>
+                  </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 320px;">
+                  <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Producto</th>
+                        <th class="text-end">Salida</th>
+                        <th class="text-end">Devuelto</th>
+                        <th class="text-end">Vendido</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rutasDevolucionBody"></tbody>
+                  </table>
+                </div>
+
+                <button id="btnGuardarDevolucionRuta" class="btn btn-success mt-2" disabled>
+                  Guardar devolución
+                </button>
+
+                <div id="rutasMensaje" class="mt-2 small text-muted"></div>
+              </div>
+            </div>
+
+            <!-- HISTORIAL DEVOLUCIONES (TABLA PLANA) -->
+            <div class="card mt-4">
+              <div class="card-header">Historial de devoluciones (rutas)</div>
+              <div class="card-body">
+
+                <div class="row g-2 mb-3">
+                  <div class="col-md-3">
+                    <label class="form-label">Desde</label>
+                    <input type="date" id="devFiltroDesde" class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-md-3">
+                    <label class="form-label">Hasta</label>
+                    <input type="date" id="devFiltroHasta" class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-md-2">
+                    <label class="form-label">Nombre</label>
+                    <input type="text" id="devFiltroNombre" class="form-control form-control-sm" placeholder="Cliente/Nombre">
+                  </div>
+
+                  <div class="col-md-2">
+                    <label class="form-label">Dirección</label>
+                    <input type="text" id="devFiltroDireccion" class="form-control form-control-sm" placeholder="Dirección">
+                  </div>
+
+                  <div class="col-md-2">
+                    <label class="form-label">Vehículo</label>
+                    <input type="text" id="devFiltroVehiculo" class="form-control form-control-sm" placeholder="Placa">
+                  </div>
+                </div>
+
+                <div class="d-flex gap-2 mb-2">
+                  <button class="btn btn-primary btn-sm" id="btnBuscarDevoluciones">Buscar</button>
+                  <button class="btn btn-outline-secondary btn-sm" id="btnLimpiarDevoluciones">Limpiar</button>
+                  <div class="ms-auto small text-muted align-self-center" id="devResumen"></div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 260px; overflow:auto;">
+                  <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                    <tr>
+                    <th>Fecha</th>
+                    <th>Nombre</th>
+                    <th>Dirección</th>
+                    <th>Vehículo</th>
+                    <th class="text-end">Total vendido (Q)</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tablaDevolucionesFlatBody">
+                       <tr>
+                      <td colspan="5" class="text-center text-muted">Aún no has buscado devoluciones.</td>
+                     </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- ✅ DETALLE DE RUTA (APARECE AL HACER CLICK EN UNA FILA DEL HISTORIAL) -->
+<div class="card mt-3" id="detalleRutaCard" style="display:none;">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <div class="fw-bold" id="detalleRutaTitulo">Detalle de ruta</div>
+    <button class="btn btn-sm btn-outline-secondary" id="btnCerrarDetalleRuta">Cerrar</button>
   </div>
-     
 
-
-      <!-- BOTONES RUTAS -->
-<div class="d-flex gap-2 mb-4">
-    <button id="btnGuardarRuta" class="btn btn-primary">
-      Guardar salida de ruta
-    </button>
-    <button id="btnImprimirRuta" class="btn btn-outline-secondary" disabled>
-      Imprimir hoja de ruta
-    </button>
-  </div>
-
-  <hr>
-
- <!-- ============================
-     DEVOLUCIÓN DE RUTA
-============================= -->
-<div class="card mt-4">
-  <div class="card-header">
-    Devolución de ruta
-  </div>
   <div class="card-body">
-
-    <div class="row g-2 mb-3">
-      <div class="col-md-4">
-        <label class="form-label">Ruta</label>
-        <select id="selectRutaDevolucion" class="form-select form-select-sm">
-          <option value="">-- Seleccione una ruta --</option>
-        </select>
-      </div>
-      <div class="col-md-8 d-flex align-items-end">
-        <span id="infoRutaDevolucion" class="text-muted"></span>
-      </div>
-    </div>
-
-    <div class="table-responsive" style="max-height: 320px;">
-      <table class="table table-sm table-hover">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
         <thead class="table-light">
           <tr>
             <th>Producto</th>
             <th class="text-end">Salida</th>
-            <th class="text-end">Devuelto</th>
+            <th class="text-end" style="width:120px;">Devuelto</th>
             <th class="text-end">Vendido</th>
+            <th class="text-end">Precio</th>
+            <th class="text-end">Total</th>
+            <th class="text-center" style="width:110px;">Acción</th>
           </tr>
         </thead>
-        <tbody id="rutasDevolucionBody">
-          <!-- filas dinámicas -->
+        <tbody id="detalleRutaBody">
+          <tr>
+            <td colspan="7" class="text-center text-muted">Seleccione una ruta del historial.</td>
+          </tr>
         </tbody>
+        <tfoot>
+          <tr>
+            <th colspan="5" class="text-end">TOTAL VENDIDO (Q)</th>
+            <th class="text-end fw-bold" id="detalleRutaTotal">Q0.00</th>
+            <th></th>
+          </tr>
+        </tfoot>
       </table>
     </div>
 
-    <button id="btnGuardarDevolucionRuta"
-            class="btn btn-success mt-2"
-            disabled>
-      Guardar devolución
-    </button>
-  </div>
-</div>
-
-      <div id="rutasMensaje" class="mt-2 small text-muted"></div>
-
+    <div class="small text-muted">
+      Tip: Cambiá “Devuelto” y presioná <b>Guardar</b> en cada línea para actualizar la devolución.
     </div>
   </div>
 </div>
 
+<!-- ✅ Imprimir ruta guardada -->
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="mb-2">🖨️ Imprimir ruta guardada</h6>
 
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-8">
+        <label class="form-label">Seleccione una ruta</label>
+        <select id="selectRutaImprimir" class="form-select">
+          <option value="">-- Cargando rutas... --</option>
+        </select>
+      </div>
 
+      <div class="col-12 col-md-4 d-grid">
+        <button id="btnImprimirRutaSeleccionada" class="btn btn-primary" disabled>
+          Imprimir ruta seleccionada
+        </button>
+      </div>
+    </div>
 
-<!-- ⚙️ Pestaña de Configuración -->
-<div class="tab-pane fade p-3" id="config" role="tabpanel" aria-labelledby="config-tab">
-  <h5 class="mb-3">⚙️ Configuraciones del sistema</h5>
-
-  <div class="form-check form-switch mb-3">
-    <input class="form-check-input" type="checkbox" id="switchEliminarProductos">
-    <label class="form-check-label" for="switchEliminarProductos">Permitir eliminar productos</label>
-  </div>
-
-  <div class="form-check form-switch">
-    <input class="form-check-input" type="checkbox" id="switchEliminarClientes">
-    <label class="form-check-label" for="switchEliminarClientes">Permitir eliminar clientes</label>
+    <small class="text-muted d-block mt-2">
+      Esto imprime con el mismo formato del PDF (incluye columna DEVOLUCIÓN).
+    </small>
   </div>
 </div>
 
-</div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ⚙️ CONFIGURACIÓN -->
+      <div class="tab-pane fade p-3" id="config" role="tabpanel" aria-labelledby="config-tab">
+        <h5 class="mb-3">⚙️ Configuraciones del sistema</h5>
+
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="switchEliminarProductos">
+          <label class="form-check-label" for="switchEliminarProductos">Permitir eliminar productos</label>
+        </div>
+
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="switchEliminarClientes">
+          <label class="form-check-label" for="switchEliminarClientes">Permitir eliminar clientes</label>
+        </div>
+      </div>
+
+    </div><!-- ✅ CIERRE tab-content -->
+  </div><!-- ✅ CIERRE container-fluid -->
 
 
+  <!-- ======================================================
+       ✅ MODALES / TOASTS (FUERA DE tab-content)
+       Esto evita espacios “gigantes” en las pestañas.
+  ======================================================= -->
+
+  <!-- ✅ Contenedor para los Toasts -->
+  <div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;"></div>
+
+  <!-- ✅ MODAL: Editar Producto -->
+  <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title" id="editProductModalLabel">✏️ Editar Producto</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editProductForm">
+            <input type="hidden" id="editProductId">
+
+            <div class="mb-3">
+              <label for="editProductName" class="form-label">Nombre</label>
+              <input type="text" id="editProductName" class="form-control" required>
+            </div>
+
+            <div class="mb-3">
+              <label for="editProductCost" class="form-label">Precio de compra</label>
+              <input type="number" id="editProductCost" class="form-control" step="0.01" required>
+            </div>
+
+            <div class="mb-3">
+              <label for="editProductPrice" class="form-label">Precio de venta</label>
+              <input type="number" id="editProductPrice" class="form-control" step="0.01" required>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Stock actual</label>
+              <input type="number" id="editProductCurrentStock" class="form-control" disabled>
+            </div>
+
+            <div class="mb-3">
+              <label for="editProductAddStock" class="form-label">Agregar stock (+)</label>
+              <input type="number" id="editProductAddStock" class="form-control" step="1" value="0">
+              <div class="form-text">Si no deseas agregar stock, déjalo en 0.</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-warning" id="btnSaveProductChanges">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ Modal de confirmación: Eliminar producto -->
+  <div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 rounded-3">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title">Eliminar producto</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          ¿Seguro que deseas eliminar <strong id="deleteProductName">este producto</strong>?
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger" id="btnConfirmDelete">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💰 Modal para registrar abono -->
+  <div class="modal fade" id="abonoModal" tabindex="-1" aria-labelledby="abonoModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="abonoModalLabel">Registrar abono</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="cuentaAbonoId">
+          <p><strong>Saldo pendiente:</strong> <span id="saldoPendienteTexto">Q0.00</span></p>
+
+          <div class="mb-3">
+            <label for="montoAbono" class="form-label">Monto a abonar (Q)</label>
+            <input type="number" id="montoAbono" class="form-control" min="0" step="0.01" placeholder="Ingrese el abono">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" onclick="guardarAbono()">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📜 Modal de historial de abonos -->
+  <div class="modal fade" id="historialAbonoModal" tabindex="-1" aria-labelledby="historialAbonoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-secondary text-white">
+          <h5 class="modal-title" id="historialAbonoModalLabel">Historial de abonos</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+              <thead class="table-light">
+                <tr>
+                  <th>Monto</th>
+                  <th>Descripción</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody id="historialAbonoBody">
+                <tr>
+                  <td colspan="3" class="text-center text-muted">Cargando...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
 
-
-<!-- ✅ Scripts -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="./pos.js"></script>
+  <!-- ✅ Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./pos.js"></script>
 </body>
+
 </html>

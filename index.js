@@ -79,13 +79,24 @@ app.get('/pos', (req, res) => {
 });
 
 // =======================
+// ✅ HEALTHCHECK (para Electron)
+// =======================
+app.get('/ping', (req, res) => {
+  res.status(200).send('ok');
+});
+
+
+// =======================
 // ARRANQUE SERVIDOR
 // =======================
 async function iniciarServidor() {
   await iniciarBaseDatos();
   app.listen(PORT, () => {
-    console.log(` Servidor corriendo en http://localhost:${PORT}`);
-  });
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+}).on('error', (err) => {
+  console.error('❌ Error levantando servidor:', err.message);
+});
+
 }
 
 iniciarServidor();

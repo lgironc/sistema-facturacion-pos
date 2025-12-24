@@ -6,6 +6,8 @@ const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const { getPaths } = require('../utils/paths');
+
 
 // =====================================================
 // 📄 CIERRE DE CAJA - GENERAR PDF
@@ -54,13 +56,16 @@ router.get('/cierre/pdf', async (req, res) => {
     // =====================================================
     // 📁 Carpeta donde se guardarán los cierres
     // =====================================================
-    const dirPath = path.join(__dirname, '../../cierres_caja');
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
+   const { cierresPDFDir } = getPaths();
+if (!cierresPDFDir) throw new Error('cierresPDFDir no definido (getPaths)');
 
-    const nombreArchivo = `cierre_${desde}_a_${hasta}.pdf`;
-    const filePath = path.join(dirPath, nombreArchivo);
+if (!fs.existsSync(cierresPDFDir)) {
+  fs.mkdirSync(cierresPDFDir, { recursive: true });
+}
+
+const nombreArchivo = `Cierre_${desde}_a_${hasta}.pdf`;
+const filePath = path.join(cierresPDFDir, nombreArchivo);
+
 
     // =====================================================
     // 🧾 Crear PDF
