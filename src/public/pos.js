@@ -275,6 +275,11 @@ async function facturar() {
     }
   }
 
+ if (window.electronAPI?.abrirCajon) {
+  window.electronAPI.abrirCajon('AON Printer')
+    .then(r => { if (!r?.success) console.warn('No abrió cajón:', r?.error); });
+}
+
   if (tipoPago === 'credito') {
     if (abonoInicial < 0) {
       mostrarToast('El abono inicial no puede ser negativo', 'warning');
@@ -365,9 +370,23 @@ async function facturar() {
 
     // 📄 Mostrar botón para abrir PDF generado
     btnAbrirPDF.style.display = 'block';
-    btnAbrirPDF.onclick = () => {
-      abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
-    };
+   btnAbrirPDF.onclick = () => {
+  abrirFacturaPDF(`/facturas/${facturaId}/ticket`);
+};
+
+// 📄 Mostrar botón para re-imprimir ticket
+btnAbrirPDF.style.display = 'block';
+btnAbrirPDF.textContent = '🧾 Re-imprimir ticket';
+
+btnAbrirPDF.onclick = () => {
+  abrirFacturaPDF(`/facturas/${facturaId}/pdf`); // si querés abrir PDF normal
+};
+
+// imprimir ticket térmico
+if (window.electronAPI?.imprimirPDF) {
+  window.electronAPI.imprimirPDF(`/facturas/${facturaId}/ticket`);
+}
+
 
   } catch (err) {
     console.error('Error facturando:', err);
@@ -490,6 +509,7 @@ function cargarEdicionProducto(producto) {
   el('editProductPrice').value = producto.precioVenta;
   el('editProductCurrentStock').value = producto.stock;
   el('editProductAddStock').value = 0;
+  el('editProductBarcode').value = producto.barcode || ''; // ✅ NUEVO
 
   // Abrimos el modal
   const modalEl = document.getElementById('editProductModal');
@@ -505,13 +525,14 @@ async function guardarCambiosProducto() {
   const costoCompra = parseFloat(el('editProductCost').value);
   const precioVenta = parseFloat(el('editProductPrice').value);
   const stockExtra = parseInt(el('editProductAddStock').value) || 0;
+  const barcode = el('editProductBarcode')?.value?.trim() || null;
 
   try {
     // ✅ Enviar actualización al backend
     const res = await fetch(`${BASE}/productos/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, costoCompra, precioVenta, stockExtra })
+      body: JSON.stringify({ nombre, costoCompra, precioVenta, stockExtra, barcode })
     });
 
     if (!res.ok) throw new Error('Error al actualizar producto');
@@ -565,23 +586,28 @@ function generarCierrePDF() {
 // 📦 CREAR PRODUCTO
 // =========================================
 async function crearProducto() {
-  const nombre = el('prodNombre').value;
+  const nombre = el('prodNombre').value?.trim();
   const costoCompra = el('prodCosto').value;
   const precioVenta = el('prodPrecio').value;
   const stock = el('prodStock').value;
+
+  // ✅ NUEVO
+  const barcode = el('prodBarcode')?.value?.trim() || null;
 
   try {
     await fetch(`${BASE}/productos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, costoCompra, precioVenta, stock })
+      body: JSON.stringify({ nombre, costoCompra, precioVenta, stock, barcode })
     });
 
     await cargarProductos();
+
     el('prodNombre').value = '';
     el('prodCosto').value = '';
     el('prodPrecio').value = '';
     el('prodStock').value = '';
+    if (el('prodBarcode')) el('prodBarcode').value = ''; // ✅ NUEVO
   } catch (e) {
     console.error('Error creando producto:', e);
   }
@@ -956,8 +982,8 @@ function obtenerMovimientosFiltrados() {
   });
 }
 
-// 🔹 Pinta la tabla y el resumen usando los filtros actuales
-function renderMovimientosFinancieros() {
+
+  function renderMovimientosFinancieros() {
   const tbody = document.getElementById('finanzasBody');
   if (!tbody) return;
 
@@ -975,27 +1001,40 @@ function renderMovimientosFinancieros() {
     return;
   }
 
+  // ✅ Render con "data-factura-id"
   tbody.innerHTML = movimientosFiltrados.map(m => {
     const fecha = new Date(m.createdAt);
     const textoFecha = fecha.toLocaleDateString() + ' ' + fecha.toLocaleTimeString();
     const esIngreso = m.tipo === 'ingreso';
     const signo = esIngreso ? '+' : '-';
 
+    const facturaIdAttr = m.facturaId ? `data-factura-id="${m.facturaId}"` : '';
+    const claseClick = m.facturaId ? 'row-factura' : '';
+
     return `
-      <tr>
+      <tr ${facturaIdAttr} class="${claseClick}" style="${m.facturaId ? 'cursor:pointer;' : ''}">
         <td>${esIngreso ? 'Ingreso' : 'Egreso'}</td>
         <td class="text-end ${esIngreso ? 'text-success' : 'text-danger'}">
           ${signo}Q${Number(m.monto || 0).toFixed(2)}
         </td>
-        <td>${m.descripcion || m.origen || ''}</td>
+        <td>${String(m.descripcion || m.origen || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
         <td class="text-end">${textoFecha}</td>
       </tr>
     `;
   }).join('');
 
-  // Resumen solo con los filtrados
+  // ✅ Agregar eventos click después de pintar
+  tbody.querySelectorAll('tr[data-factura-id]').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const facturaId = tr.getAttribute('data-factura-id');
+      if (!facturaId) return;
+      abrirDetalleFacturaModal(facturaId);
+    });
+  });
+
   renderResumenFinanciero(movimientosFiltrados);
 }
+
 
 // 🔹 Carga desde el backend y guarda en state.movimientosFinancieros
 async function cargarMovimientosFinancieros() {
@@ -1096,6 +1135,69 @@ async function guardarMovimientoFinanciero() {
   }
 }
 
+function byId(id) { return document.getElementById(id); }
+function Q(n) { return `Q${Number(n || 0).toFixed(2)}`; }
+
+async function abrirDetalleFacturaModal(facturaId) {
+  // Reset UI
+  byId('df_error').style.display = 'none';
+  byId('df_error').textContent = '';
+  byId('df_numero').textContent = `#${facturaId}`;
+  byId('df_fecha').textContent = '—';
+  byId('df_pago').textContent = '—';
+  byId('df_cliente').textContent = '—';
+  byId('df_total').textContent = 'Q0.00';
+  byId('df_body').innerHTML = `<tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>`;
+
+  // Abrir modal
+  const modalEl = byId('detalleFacturaModal');
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+  try {
+    const res = await fetch(`${BASE}/facturas/${facturaId}`);
+    const factura = await res.json();
+
+    if (!res.ok) throw new Error(factura?.error || 'No se pudo cargar la factura');
+
+    // Header
+    byId('df_numero').textContent = `INT-${String(factura.id).padStart(4, '0')}`;
+    byId('df_fecha').textContent = new Date(factura.createdAt).toLocaleString();
+    byId('df_pago').textContent = (factura.tipoPago || 'contado').toUpperCase();
+    byId('df_cliente').textContent = factura.Cliente?.nombre || 'Mostrador';
+    byId('df_total').textContent = Q(factura.total);
+
+    // Detalles
+    const detalles = factura.FacturaDetalles || [];
+    if (!detalles.length) {
+      byId('df_body').innerHTML = `<tr><td colspan="4" class="text-center text-muted">Sin productos</td></tr>`;
+    } else {
+      byId('df_body').innerHTML = detalles.map(d => {
+        const cant = Number(d.cantidad || 0);
+        const nombre = d.Producto?.nombre || 'N/D';
+        const pu = Number((d.precioUnitario ?? d.precio ?? d.Producto?.precioVenta) || 0);
+        const sub = cant * pu;
+
+        return `
+          <tr>
+            <td>${escapeHtml(nombre)}</td>
+            <td class="text-end">${cant}</td>
+            <td class="text-end">${Q(pu)}</td>
+            <td class="text-end">${Q(sub)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Botones
+    byId('df_btnTicket').onclick = () => abrirFacturaPDF(`/facturas/${facturaId}/ticket`);
+    byId('df_btnPDF').onclick = () => abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
+
+  } catch (err) {
+    byId('df_error').style.display = 'block';
+    byId('df_error').textContent = err.message;
+    byId('df_body').innerHTML = `<tr><td colspan="4" class="text-center text-muted">Error</td></tr>`;
+  }
+}
 
 // =========================================
 // 📅 HISTORIAL INVENTARIO
@@ -1868,7 +1970,7 @@ function guardarConfiguracion() {
   if (cliSwitch) localStorage.setItem(CONFIG_KEYS.ELIMINAR_CLIENTES, cliSwitch.checked);
 
   if (typeof mostrarToast === 'function') {
-    mostrarToast('Configuración guardada ✅', 'success');
+    mostrarToast('Configuración guardada', 'success');
   }
 }
 
@@ -1910,6 +2012,76 @@ async function refrescarRutasUI() {
   }
 }
 
+// ===========================
+// SCANNER HID (teclado) -> buscar por barcode -> agregar al carrito
+// ===========================
+// ===========================
+// SCANNER HID (teclado) -> buscar por barcode -> agregar 1 al carrito
+// ===========================
+let scanBuffer = "";
+let scanTimer = null;
+
+function resetScanTimer() {
+  if (scanTimer) clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => { scanBuffer = ""; }, 80);
+}
+
+function isPOSSectionActive() {
+  // Solo cuando estás en la pestaña POS
+  const posPane = document.getElementById('posSection');
+  return posPane && posPane.classList.contains('active') && posPane.classList.contains('show');
+}
+
+async function procesarScan(code) {
+  const clean = (code || "").trim();
+  if (!clean) return;
+
+  try {
+    // 1) Buscar en memoria primero
+    let prod = state.productos.find(p => (p.barcode || "") === clean);
+
+    // 2) Si no está, pedirlo al backend
+    if (!prod) {
+      const res = await fetch(`${BASE}/productos/barcode/${encodeURIComponent(clean)}`);
+      if (!res.ok) throw new Error("No existe ese código en productos");
+      prod = await res.json();
+    }
+
+    // ✅ Agregar 1 al carrito
+    agregarAlCarrito(prod, 1);
+    mostrarToast(`Agregado: ${prod.nombre}`, "success");
+  } catch (err) {
+    mostrarToast(`Código no encontrado: ${clean}`, "warning");
+  }
+}
+
+window.addEventListener("keydown", async (e) => {
+  // Solo en POS
+  if (!isPOSSectionActive()) return;
+
+  // Ignorar teclas especiales
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  // Terminan el scan (depende del lector): Enter o Tab
+  if (e.key === "Enter" || e.key === "Tab") {
+    const code = scanBuffer;
+    scanBuffer = "";
+
+    // Evita que el Enter dispare botones o el Tab cambie de campo
+    e.preventDefault();
+
+    await procesarScan(code);
+    return;
+  }
+
+  // Construir buffer con caracteres imprimibles
+  if (e.key.length === 1) {
+    scanBuffer += e.key;
+    resetScanTimer();
+  }
+}, true);
+
+
 // =========================================
 // 🚀 INICIALIZACIÓN GLOBAL (ARREGLADA)
 // =========================================
@@ -1937,6 +2109,7 @@ function init() {
   el('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
   el('btnConfirmDelete')?.addEventListener('click', confirmarEliminar);
   el('btnSaveProductChanges')?.addEventListener('click', guardarCambiosProducto);
+  
 
   // ✅ POS filtros
   el('search')?.addEventListener('input', renderProductosPOS);

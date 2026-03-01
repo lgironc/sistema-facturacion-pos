@@ -7,7 +7,7 @@ const { Producto, HistorialInventario } = require('../models');
 // ===========================
 router.post('/', async (req, res) => {
   try {
-    const { nombre, costoCompra, precioVenta, stock } = req.body;
+    const { nombre, costoCompra, precioVenta, stock, barcode } = req.body;
 
     if (!nombre || !costoCompra || !precioVenta) {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
@@ -18,11 +18,12 @@ router.post('/', async (req, res) => {
       nombre,
       costoCompra,
       precioVenta,
-      stock: stock || 0
+      stock: stock || 0,
+      barcode: (barcode || '').trim() || null
     });
 
     // 🔍 Debug: verificar que entra aquí
-console.log('🟢 Registrando historial de producto:', producto.id, stock);
+console.log(' Registrando historial de producto:', producto.id, stock);
 
    // ✅ Registrar el movimiento en el historial (entrada inicial)
     await HistorialInventario.create({
@@ -41,11 +42,28 @@ console.log('🟢 Registrando historial de producto:', producto.id, stock);
 });
 
 // ===========================
+// GET - Buscar producto por barcode
+// ===========================
+router.get('/barcode/:code', async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) return res.status(400).json({ error: 'Código inválido' });
+
+    const producto = await Producto.findOne({ where: { barcode: code } });
+    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    res.json(producto);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===========================
 // PUT - Editar producto (y sumar stock si aplica)
 // ===========================
 router.put('/:id', async (req, res) => {
   try {
-    let { nombre, costoCompra, precioVenta, stockExtra } = req.body;
+    let { nombre, costoCompra, precioVenta, stockExtra, barcode } = req.body;
 stockExtra = parseInt(stockExtra) || 0;
 
 
@@ -59,6 +77,11 @@ stockExtra = parseInt(stockExtra) || 0;
     producto.nombre = nombre || producto.nombre;
     producto.costoCompra = costoCompra || producto.costoCompra;
     producto.precioVenta = precioVenta || producto.precioVenta;
+
+    // Actualizar barcode si viene (permite dejarlo null)
+if (barcode !== undefined) {
+  producto.barcode = (barcode || '').trim() || null;
+}
 
     // Sumar stock solo si stockExtra > 0
     if (stockExtra > 0) {
@@ -84,6 +107,7 @@ stockExtra = parseInt(stockExtra) || 0;
     res.status(500).json({ error: 'Error al actualizar producto' });
   }
 });
+
 
 
 // ===========================
@@ -138,6 +162,8 @@ router.patch('/:id/reactivar', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
 
 
 

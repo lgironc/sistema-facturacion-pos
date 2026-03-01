@@ -11,7 +11,9 @@
   "build": {
     "appId": "com.sistemafacturacion.app",
     "productName": "Sistema de Facturación",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "**/*",
       "!dist/**"
@@ -25,11 +27,14 @@
     }
   },
   "dependencies": {
+    "escpos": "^3.0.0-alpha.6",
+    "escpos-usb": "^3.0.0-alpha.4",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
+    "node-thermal-printer": "^4.6.0",
     "pdfkit": "^0.17.2",
     "sequelize": "^6.37.7",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.0.2"
   },
   "devDependencies": {
     "electron": "^38.3.0",

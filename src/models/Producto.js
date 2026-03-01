@@ -38,7 +38,12 @@ const Producto = sequelize.define('Producto', {
   }, activo: {
   type: DataTypes.BOOLEAN,
   defaultValue: true
-}
+},
+barcode: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  unique: true
+},
 
 
 },

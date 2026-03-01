@@ -25,13 +25,13 @@ app.use(express.json());
 async function iniciarBaseDatos() {
   try {
     await sequelize.sync({ alter: false });
-    console.log('✅ Base de datos SQLite sincronizada correctamente');
+    console.log(' Base de datos SQLite sincronizada correctamente');
 
     await Cliente.findOrCreate({
       where: { nombre: 'Mostrador' },
       defaults: { telefono: '', direccion: '' }
     });
-    console.log('✅ Cliente "Mostrador" disponible');
+    console.log(' Cliente "Mostrador" disponible');
   } catch (err) {
     console.error(' Error al sincronizar la base de datos:', err);
   }
@@ -53,7 +53,7 @@ app.use('/cuentas', require('./src/routes/cuentasPorCobrar'));
 app.use('/rutas', require('./src/routes/rutas'));
 
 
-console.log(' Rutas dinámicas registradas');
+console.log(' Rutas dinamicas registradas');
 
 
 
@@ -94,7 +94,7 @@ async function iniciarServidor() {
   app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 }).on('error', (err) => {
-  console.error('❌ Error levantando servidor:', err.message);
+  console.error(' Error levantando servidor:', err.message);
 });
 
 }

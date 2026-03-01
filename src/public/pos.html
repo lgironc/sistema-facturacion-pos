@@ -231,6 +231,10 @@
               <div class="col-md-2">
                 <input id="prodStock" type="number" min="0" class="form-control" placeholder="Stock" />
               </div>
+              <div class="col-md-3">
+              <input id="prodBarcode" type="text" class="form-control" placeholder="Barcode (escanea aquí)" />
+             
+              </div>
               <div class="col-md-1 d-grid">
                 <button id="btnCrearProducto" class="btn btn-success">+</button>
               </div>
@@ -506,6 +510,55 @@
           </div>
         </div>
       </div>
+
+     <!-- 🧾 Modal: Detalle de factura (desde Finanzas) -->
+<div class="modal fade" id="detalleFacturaModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title">Detalle de factura</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="row g-2 mb-2">
+          <div class="col-md-4"><b>Factura:</b> <span id="df_numero">—</span></div>
+          <div class="col-md-4"><b>Fecha:</b> <span id="df_fecha">—</span></div>
+          <div class="col-md-4"><b>Pago:</b> <span id="df_pago">—</span></div>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-md-8"><b>Cliente:</b> <span id="df_cliente">—</span></div>
+          <div class="col-md-4 text-end"><b>Total:</b> <span id="df_total">Q0.00</span></div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Cant</th>
+                <th class="text-end">P.Unit</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody id="df_body">
+              <tr><td colspan="4" class="text-center text-muted">Seleccione una venta…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="df_error" class="text-danger small mt-2" style="display:none;"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" id="df_btnTicket">🧾 Ticket</button>
+        <button class="btn btn-outline-primary" id="df_btnPDF">📄 PDF</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
       <!-- 🚚 RUTAS -->
       <div class="tab-pane fade" id="rutasSection" role="tabpanel" aria-labelledby="rutas-tab">
@@ -830,6 +883,12 @@
               <label for="editProductPrice" class="form-label">Precio de venta</label>
               <input type="number" id="editProductPrice" class="form-control" step="0.01" required>
             </div>
+
+            <div class="mb-3">
+           <label for="editProductBarcode" class="form-label">Código de barras</label>
+            <input id="editProductBarcode" type="text" class="form-control" placeholder="Barcode (escanea aquí)" />
+          
+          </div>
 
             <div class="mb-3">
               <label class="form-label">Stock actual</label>

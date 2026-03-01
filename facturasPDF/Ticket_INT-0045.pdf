@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Ticket INT-0045</title>
+  <style>
+    /* TICKET 80mm */
+    @page { size: 80mm auto; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      width: 80mm;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.2;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .wrap { padding: 6px 6px 10px 6px; }
+    .center { text-align: center; }
+    .hr { border-top: 1px dashed #000; margin: 6px 0; }
+    pre {
+      margin: 0;
+      white-space: pre;     /* IMPORTANT: respeta espacios */
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .right { text-align: right; }
+    .small { font-size: 10px; }
+    .bold { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="center bold">DEPÓSITO LA BENDICIÓN</div>
+    <div class="center small">Calle Real 2-89A Zona 1, San Miguel Dueñas</div>
+    <div class="center small">Tel: 5667-9720 | NIT: 7225652</div>
+
+    <div class="hr"></div>
+
+    <div>Factura: INT-0045</div>
+    <div>Fecha: 25/2/2026 11:36:01 a. m.</div>
+    <div>Cliente: Mostrador</div>
+
+    <div class="hr"></div>
+
+    <pre>1lb Azúcar Caña Real
+  1 x Q5.00 = Q5.00
+1lb Arroz blanco 400gr
+  1 x Q7.00 = Q7.00
+Nube Blanca
+  1 x Q5.00 = Q5.00
+</pre>
+
+    <div class="hr"></div>
+
+    <div class="right bold">TOTAL: Q17.00</div>
+
+    <div class="hr"></div>
+
+    <pre>Pago: Contado
+Efectivo: Q20.00
+Cambio: Q3.00</pre>
+
+    <div style="height:6px"></div>
+    <div class="center bold">¡Gracias por su compra!</div>
+    <div class="center small"><i>Interna — No válida como FEL hasta certificación SAT</i></div>
+  </div>
+</body>
+</html>

@@ -264,9 +264,150 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
 // ===========================
-// GET - Generar y GUARDAR PDF de factura en carpeta /facturas_pos/
+// GET - Ticket 80mm (para impresora térmica)
 // ===========================
+router.get('/:id/ticket', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const factura = await Factura.findByPk(id, {
+      include: [
+        { model: Cliente, as: 'Cliente', attributes: ['nombre', 'telefono', 'direccion'] },
+        {
+          model: FacturaDetalle,
+          as: 'FacturaDetalles',
+          include: [{ model: Producto, as: 'Producto', attributes: ['nombre', 'precioVenta'] }]
+        },
+        { model: CuentaPorCobrar, as: 'CuentaPorCobrar' }
+      ]
+    });
+
+    if (!factura) return res.status(404).send('Factura no encontrada');
+
+    const numeroFactura = `INT-${String(factura.id).padStart(4, '0')}`;
+    const fecha = new Date(factura.createdAt);
+    const fechaStr = `${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}`;
+
+    const tipoPago = factura.tipoPago || 'contado';
+    const total = Number(factura.total || 0);
+
+    const efectivo = Number(factura.efectivo || 0);
+    const cambio = Math.max(efectivo - total, 0);
+
+    const cxc = factura.CuentaPorCobrar || null;
+    const saldo = cxc ? Number(cxc.saldoPendiente || 0) : 0;
+    const abonado = cxc ? Math.max(total - saldo, 0) : 0;
+
+    // Helpers para “tabla” monoespaciada
+    const padR = (s, n) => String(s ?? '').padEnd(n, ' ').slice(0, n);
+    const padL = (s, n) => String(s ?? '').padStart(n, ' ').slice(0, n);
+
+    // Anchos (en caracteres) pensados para 80mm con Courier 10–11px
+    const W_CANT = 4;
+    const W_NAME = 22;
+    const W_PU   = 10;
+    const W_SUB  = 10;
+
+    let lineas = '';
+(factura.FacturaDetalles || []).forEach(d => {
+  const cant = Number(d.cantidad || 0);
+  const nombre = String(d.Producto?.nombre || 'N/D');
+
+  const precio = Number((d.precioUnitario ?? d.precio ?? d.Producto?.precioVenta) || 0);
+  const subtotal = Number((cant * precio).toFixed(2));
+
+  // Línea 1: nombre del producto
+  lineas += `${nombre}\n`;
+
+  // Línea 2: detalle (con sangría)
+  // Ej: "  1 x Q5.00 = Q5.00"
+  lineas += `  ${cant} x Q${precio.toFixed(2)} = Q${subtotal.toFixed(2)}\n`;
+
+  // Separador entre productos (opcional)
+  // lineas += `\n`;
+});
+
+    const pagoTexto =
+      tipoPago === 'contado'
+        ? `Pago: Contado\nEfectivo: Q${efectivo.toFixed(2)}\nCambio: Q${cambio.toFixed(2)}`
+        : `Pago: Crédito\nAbono: Q${abonado.toFixed(2)}\nSaldo: Q${saldo.toFixed(2)}`;
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Ticket ${numeroFactura}</title>
+  <style>
+    /* TICKET 80mm */
+    @page { size: 80mm auto; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      width: 80mm;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.2;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .wrap { padding: 6px 6px 10px 6px; }
+    .center { text-align: center; }
+    .hr { border-top: 1px dashed #000; margin: 6px 0; }
+    pre {
+      margin: 0;
+      white-space: pre;     /* IMPORTANT: respeta espacios */
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .right { text-align: right; }
+    .small { font-size: 10px; }
+    .bold { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="center bold">DEPÓSITO LA BENDICIÓN</div>
+    <div class="center small">Calle Real 2-89A Zona 1, San Miguel Dueñas</div>
+    <div class="center small">Tel: 5667-9720 | NIT: 7225652</div>
+
+    <div class="hr"></div>
+
+    <div>Factura: ${numeroFactura}</div>
+    <div>Fecha: ${fechaStr}</div>
+    <div>Cliente: ${factura.Cliente?.nombre || 'Mostrador'}</div>
+
+    <div class="hr"></div>
+
+    <pre>${lineas}</pre>
+
+    <div class="hr"></div>
+
+    <div class="right bold">TOTAL: Q${total.toFixed(2)}</div>
+
+    <div class="hr"></div>
+
+    <pre>${pagoTexto}</pre>
+
+    <div style="height:6px"></div>
+    <div class="center bold">¡Gracias por su compra!</div>
+    <div class="center small"><i>Interna — No válida como FEL hasta certificación SAT</i></div>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (e) {
+    console.error('Error ticket:', e);
+    res.status(500).send('Error generando ticket');
+  }
+});
+
+
+
 // ===========================
 // GET - Generar y GUARDAR PDF de factura en carpeta /facturasPDF/
 // (TABLA MONOESPACIADA estilo Rutas)
