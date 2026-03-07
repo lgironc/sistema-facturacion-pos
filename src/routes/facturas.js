@@ -4,8 +4,43 @@ const { Cliente, Producto, Factura, FacturaDetalle, CuentaPorCobrar, MovimientoF
 const PDFDocument = require('pdfkit');
 const { getPaths } = require('../utils/paths');
 
- const fs = require('fs');
-    const path = require('path');
+const fs = require('fs');
+const path = require('path');
+
+function readBusinessConfig() {
+  try {
+    const { configPath } = getPaths();
+
+    const defaults = {
+      nombre: '',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+
+    if (!configPath || !fs.existsSync(configPath)) {
+      return defaults;
+    }
+
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    return {
+      nombre: parsed?.negocio?.nombre || defaults.nombre,
+      direccion: parsed?.negocio?.direccion || defaults.direccion,
+      telefono: parsed?.negocio?.telefono || defaults.telefono,
+      nit: parsed?.negocio?.nit || defaults.nit
+    };
+  } catch (error) {
+    console.error(' Error leyendo configuración de negocio:', error);
+    return {
+      nombre: '',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+  }
+}
 
 
 // POST /facturas  — versión estable sin transacciones y con precioUnitario
@@ -301,6 +336,7 @@ router.get('/:id/ticket', async (req, res) => {
     if (!factura) return res.status(404).send('Factura no encontrada');
 
     const numeroFactura = `INT-${String(factura.id).padStart(4, '0')}`;
+    
     const fecha = new Date(factura.createdAt);
     const fechaStr = `${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}`;
 
@@ -313,6 +349,16 @@ router.get('/:id/ticket', async (req, res) => {
     const cxc = factura.CuentaPorCobrar || null;
     const saldo = cxc ? Number(cxc.saldoPendiente || 0) : 0;
     const abonado = cxc ? Math.max(total - saldo, 0) : 0;
+
+    const negocio = readBusinessConfig();
+    function escapeHtml(str) {
+  return String(str ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 
     // -------------------------------
     // 1) MODO PDF (para "Abrir Ticket")
@@ -349,9 +395,22 @@ router.get('/:id/ticket', async (req, res) => {
       const left = 8;
 
       // Header
-      doc.font('Helvetica-Bold').fontSize(12).text('DEPÓSITO LA BENDICIÓN', 0, y, { width: pageWidth, align: 'center' }); y += 14;
-      doc.font('Helvetica').fontSize(8).text('Calle Real 2-89A Zona 1, San Miguel Dueñas', 0, y, { width: pageWidth, align: 'center' }); y += 10;
-      doc.text('Tel: 5667-9720 | NIT: 7225652', 0, y, { width: pageWidth, align: 'center' }); y += 10;
+      doc.font('Helvetica-Bold').fontSize(12).text(negocio.nombre || 'Mi negocio', 0, y, { width: pageWidth, align: 'center' }); y += 14;
+
+if (negocio.direccion) {
+  doc.font('Helvetica').fontSize(8).text(negocio.direccion, 0, y, { width: pageWidth, align: 'center' });
+  y += 10;
+}
+
+const lineaNegocio = [
+  negocio.telefono ? `Tel: ${negocio.telefono}` : '',
+  negocio.nit ? `NIT: ${negocio.nit}` : ''
+].filter(Boolean).join(' | ');
+
+if (lineaNegocio) {
+  doc.font('Helvetica').fontSize(8).text(lineaNegocio, 0, y, { width: pageWidth, align: 'center' });
+  y += 10;
+}
 
       doc.font('Courier').fontSize(8).text('-'.repeat(lineChars), left, y); y += 10;
 
@@ -478,9 +537,14 @@ router.get('/:id/ticket', async (req, res) => {
 </head>
 <body>
   <div class="wrap">
-    <div class="center bold">DEPÓSITO LA BENDICIÓN</div>
-    <div class="center small">Calle Real 2-89A Zona 1, San Miguel Dueñas</div>
-    <div class="center small">Tel: 5667-9720 | NIT: 7225652</div>
+    <div class="center bold">${escapeHtml(negocio.nombre || 'Mi negocio')}</div>
+${negocio.direccion ? `<div class="center small">${escapeHtml(negocio.direccion)}</div>` : ''}
+${(negocio.telefono || negocio.nit)
+  ? `<div class="center small">${escapeHtml([
+      negocio.telefono ? `Tel: ${negocio.telefono}` : '',
+      negocio.nit ? `NIT: ${negocio.nit}` : ''
+    ].filter(Boolean).join(' | '))}</div>`
+  : ''}
     <div class="hr"></div>
     <div>Ticket: ${numeroFactura}</div>
     <div>Fecha: ${fechaStr}</div>
@@ -538,6 +602,7 @@ router.get('/:id/pdf', async (req, res) => {
     }
 
     const numeroFactura = `INT-${String(factura.id).padStart(4, '0')}`;
+    const negocio = readBusinessConfig();
 
     // ✅ RUTA PORTABLE (junto al .exe)
     const { facturasPDFDir } = getPaths();
@@ -558,11 +623,21 @@ router.get('/:id/pdf', async (req, res) => {
     // ========================
     // ENCABEZADO
     // ========================
-    doc.fontSize(20).text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
-    doc.moveDown(0.3);
-    doc.fontSize(10).text('Calle Real 2-89A Zona 1, San Miguel Dueñas | Tel: 5667-9720', { align: 'center' });
-    doc.text('NIT: 7225652', { align: 'center' });
-    doc.moveDown(1);
+    doc.fontSize(20).text(negocio.nombre || 'Mi negocio', { align: 'center' });
+doc.moveDown(0.3);
+
+if (negocio.direccion || negocio.telefono) {
+  const linea1 = [negocio.direccion || '', negocio.telefono ? `Tel: ${negocio.telefono}` : '']
+    .filter(Boolean)
+    .join(' | ');
+  if (linea1) doc.fontSize(10).text(linea1, { align: 'center' });
+}
+
+if (negocio.nit) {
+  doc.text(`NIT: ${negocio.nit}`, { align: 'center' });
+}
+
+doc.moveDown(1);
 
     // ========================
     // INFO FACTURA + CLIENTE

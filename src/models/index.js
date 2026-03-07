@@ -11,6 +11,8 @@ const HistorialInventario= require('./HistorialInventario');
 const MovimientoFinanciero = require('./MovimientoFinanciero');
 const CuentaPorCobrar    = require('./CuentaPorCobrar');
 
+
+
 // 🔹 NUEVOS MODELOS
 const Ruta               = require('./Ruta');
 const RutaDetalle        = require('./RutaDetalle');

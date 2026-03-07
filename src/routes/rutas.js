@@ -8,7 +8,40 @@ const { Op } = require('sequelize');
 const { getPaths } = require('../utils/paths');
 const { rutasPDFDir } = getPaths();
 
+function readBusinessConfig() {
+  try {
+    const { configPath } = getPaths();
 
+    const defaults = {
+      nombre: 'Mi negocio',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+
+    if (!configPath || !fs.existsSync(configPath)) {
+      return defaults;
+    }
+
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    return {
+      nombre: parsed?.negocio?.nombre || defaults.nombre,
+      direccion: parsed?.negocio?.direccion || defaults.direccion,
+      telefono: parsed?.negocio?.telefono || defaults.telefono,
+      nit: parsed?.negocio?.nit || defaults.nit
+    };
+  } catch (error) {
+    console.error(' Error leyendo configuración de negocio:', error);
+    return {
+      nombre: 'Mi negocio',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+  }
+}
 
 const {
   Ruta,
@@ -456,8 +489,7 @@ router.get('/:id/pdf', async (req, res) => {
     if (!ruta) {
       return res.status(404).json({ error: 'Ruta no encontrada' });
     }
-
-    const { rutasDir } = getPaths();
+    const negocio = readBusinessConfig();
 
     if (!fs.existsSync(rutasPDFDir)) fs.mkdirSync(rutasPDFDir, { recursive: true });
 
@@ -470,15 +502,37 @@ router.get('/:id/pdf', async (req, res) => {
     // =========================
     // ENCABEZADO
     // =========================
-    doc.font('Helvetica-Bold').fontSize(20)
-      .text('DEPÓSITO LA BENDICIÓN', { align: 'center' });
+   doc.font('Helvetica-Bold').fontSize(18)
+  .text(negocio.nombre || 'Mi negocio', { align: 'center' });
 
-    doc.moveDown(0.5);
-    doc.fontSize(14).text('HOJA DE RUTA', { align: 'center' });
-    doc.moveDown(1);
+doc.moveDown(0.2);
+doc.font('Helvetica').fontSize(10)
+  .text('Documento generado con BACE POS', { align: 'center' });
 
-    doc.font('Helvetica').fontSize(11);
+if (negocio.direccion || negocio.telefono) {
+  const lineaNegocio = [
+    negocio.direccion || '',
+    negocio.telefono ? `Tel: ${negocio.telefono}` : ''
+  ].filter(Boolean).join(' | ');
 
+  if (lineaNegocio) {
+    doc.moveDown(0.2);
+    doc.font('Helvetica').fontSize(10)
+      .text(lineaNegocio, { align: 'center' });
+  }
+}
+
+if (negocio.nit) {
+  doc.font('Helvetica').fontSize(10)
+    .text(`NIT: ${negocio.nit}`, { align: 'center' });
+}
+
+doc.moveDown(0.5);
+doc.font('Helvetica-Bold').fontSize(14)
+  .text('HOJA DE RUTA', { align: 'center' });
+
+doc.moveDown(1);
+    doc.font('Helvetica').fontSize(10)
     const fechaRuta = ruta.fecha
       ? new Date(ruta.fecha).toLocaleDateString()
       : '';

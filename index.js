@@ -6,6 +6,7 @@ const path = require('path');
 const sequelize = require('./src/database');
 const PDFDocument = require('pdfkit');
 const { Ruta, RutaDetalle, Producto, Cliente } = require('./src/models');
+const configuracionRoutes = require('./src/routes/configuracion');
 require('./src/models');
 
 
@@ -25,6 +26,8 @@ app.use(express.json());
 async function iniciarBaseDatos() {
   try {
     await sequelize.sync({ alter: false });
+    await migrarTablaRuta();
+    await migrarTablaRutaDetalles();
     console.log(' Base de datos SQLite sincronizada correctamente');
 
     await Cliente.findOrCreate({
@@ -51,7 +54,7 @@ app.use('/historial', require('./src/routes/historial'));
 app.use('/finanzas', require('./src/routes/finanzas'));
 app.use('/cuentas', require('./src/routes/cuentasPorCobrar'));
 app.use('/rutas', require('./src/routes/rutas'));
-
+app.use('/configuracion', configuracionRoutes);
 
 console.log(' Rutas dinamicas registradas');
 
@@ -98,5 +101,60 @@ async function iniciarServidor() {
 });
 
 }
+async function migrarTablaRuta() {
+  const qi = sequelize.getQueryInterface();
 
+  try {
+    const tabla = await qi.describeTable('Ruta');
+
+    if (!tabla.observaciones) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN observaciones TEXT;`);
+      console.log('Columna Ruta.observaciones creada');
+    }
+
+    if (!tabla.estado) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN estado VARCHAR(255) NOT NULL DEFAULT 'ABIERTA';`);
+      console.log(' Columna Ruta.estado creada');
+    }
+
+    if (!tabla.totalEsperado) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN totalEsperado DECIMAL(10,2) NOT NULL DEFAULT 0;`);
+      console.log(' Columna Ruta.totalEsperado creada');
+    }
+
+    if (!tabla.totalCobrado) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN totalCobrado DECIMAL(10,2) NOT NULL DEFAULT 0;`);
+      console.log(' Columna Ruta.totalCobrado creada');
+    }
+
+    if (!tabla.diferencia) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN diferencia DECIMAL(10,2) NOT NULL DEFAULT 0;`);
+      console.log(' Columna Ruta.diferencia creada');
+    }
+
+    if (!tabla.fechaLiquidacion) {
+      await sequelize.query(`ALTER TABLE Ruta ADD COLUMN fechaLiquidacion DATETIME;`);
+      console.log(' Columna Ruta.fechaLiquidacion creada');
+    }
+  } catch (error) {
+    console.error(' Error migrando tabla Ruta:', error);
+    throw error;
+  }
+}
+
+async function migrarTablaRutaDetalles() {
+  const qi = sequelize.getQueryInterface();
+
+  try {
+    const tabla = await qi.describeTable('RutaDetalles');
+
+    if (!tabla.precioVenta) {
+      await sequelize.query(`ALTER TABLE RutaDetalles ADD COLUMN precioVenta DECIMAL(10,2) NOT NULL DEFAULT 0;`);
+      console.log(' Columna RutaDetalles.precioVenta creada');
+    }
+  } catch (error) {
+    console.error(' Error migrando tabla RutaDetalles:', error);
+    throw error;
+  }
+}
 iniciarServidor();

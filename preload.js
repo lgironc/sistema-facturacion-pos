@@ -6,4 +6,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   imprimirPDF: (url) => ipcRenderer.invoke('imprimir-pdf', url),
   abrirCajon: (printerName) => ipcRenderer.invoke('abrir-cajon', printerName),
   abrirCarpeta: (carpeta) => ipcRenderer.invoke('abrir-carpeta', carpeta),
+
+  crearBackup: () => ipcRenderer.invoke('crear-backup'),
+  abrirCarpetaBackups: () => ipcRenderer.invoke('abrir-carpeta-backups'),
+  restaurarBackup: () => ipcRenderer.invoke('restaurar-backup'),
+  reiniciarApp: () => ipcRenderer.invoke('reiniciar-app')
 });

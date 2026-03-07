@@ -21,18 +21,23 @@ function getPaths() {
   // Todo al lado del exe (portable)
   const dataDir = ensureFolder(path.join(baseDir, 'Data'));
   const pdfDirFacturas = ensureFolder(path.join(baseDir, 'facturasPDF'));
-  const pdfDirTickets  = ensureFolder(path.join(baseDir, 'ticketsPDF'));
+  const pdfDirTickets = ensureFolder(path.join(baseDir, 'ticketsPDF'));
   const pdfDirRutas = ensureFolder(path.join(baseDir, 'rutasPDF'));
   const pdfDirCierres = ensureFolder(path.join(baseDir, 'cierresPDF'));
+  const backupsDir = ensureFolder(path.join(baseDir, 'backups'));
 
   const dbPath = path.join(dataDir, 'database.sqlite');
+  const configPath = path.join(dataDir, 'config.json');
 
   return {
     baseDir,
     dataDir,
     dbPath,
+    databasePath: dbPath,
+    configPath,
+    backupsDir,
     facturasPDFDir: pdfDirFacturas,
-    ticketsPDFDir: pdfDirTickets, 
+    ticketsPDFDir: pdfDirTickets,
     rutasPDFDir: pdfDirRutas,
     cierresPDFDir: pdfDirCierres
   };

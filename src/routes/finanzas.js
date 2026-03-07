@@ -8,7 +8,40 @@ const fs = require('fs');
 const path = require('path');
 const { getPaths } = require('../utils/paths');
 
+function readBusinessConfig() {
+  try {
+    const { configPath } = getPaths();
 
+    const defaults = {
+      nombre: 'Mi negocio',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+
+    if (!configPath || !fs.existsSync(configPath)) {
+      return defaults;
+    }
+
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    return {
+      nombre: parsed?.negocio?.nombre || defaults.nombre,
+      direccion: parsed?.negocio?.direccion || defaults.direccion,
+      telefono: parsed?.negocio?.telefono || defaults.telefono,
+      nit: parsed?.negocio?.nit || defaults.nit
+    };
+  } catch (error) {
+    console.error('❌ Error leyendo configuración de negocio:', error);
+    return {
+      nombre: 'Mi negocio',
+      direccion: '',
+      telefono: '',
+      nit: ''
+    };
+  }
+}
 // =====================================================
 // 📄 CIERRE DE CAJA - GENERAR PDF
 // GET /finanzas/cierre/pdf?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
@@ -52,6 +85,7 @@ router.get('/cierre/pdf', async (req, res) => {
     });
 
     const saldo = totalIngresos - totalEgresos;
+    const negocio = readBusinessConfig();
 
     // =====================================================
     // 📁 Carpeta donde se guardarán los cierres
@@ -75,23 +109,47 @@ const filePath = path.join(cierresPDFDir, nombreArchivo);
     doc.pipe(writeStream);
 
     // Encabezado
-    doc
-      .fontSize(18)
-      .text('CIERRE DE CAJA', { align: 'center' })
-      .moveDown(0.5);
+    
+doc
+  .fontSize(18)
+  .text('CIERRE DE CAJA', { align: 'center' })
+  .moveDown(0.4);
 
+doc
+  .fontSize(10)
+  .text('Documento generado con BACE POS', { align: 'center' })
+  .moveDown(0.2);
+
+doc
+  .fontSize(12)
+  .text(negocio.nombre || 'Mi negocio', { align: 'center' });
+
+if (negocio.direccion || negocio.telefono) {
+  const linea1 = [
+    negocio.direccion || '',
+    negocio.telefono ? `Tel: ${negocio.telefono}` : ''
+  ].filter(Boolean).join(' | ');
+
+  if (linea1) {
     doc
       .fontSize(10)
-      .text('Sistema de Facturación POS - Depósito La Bendición', { align: 'center' })
-      .moveDown(1);
+      .text(linea1, { align: 'center' });
+  }
+}
 
-    doc
-      .fontSize(11)
-      .text(`Rango de fechas: ${desde} a ${hasta}`)
-      .text(
-        `Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
-      )
-      .moveDown(1.5);
+if (negocio.nit) {
+  doc
+    .fontSize(10)
+    .text(`NIT: ${negocio.nit}`, { align: 'center' });
+}
+
+doc.moveDown(0.8);
+
+doc
+  .fontSize(11)
+  .text(`Rango de fechas: ${desde} a ${hasta}`)
+  .text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`)
+  .moveDown(1.5);
 
     // Resumen
     doc

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -6,7 +6,7 @@ const https = require('https');
 const { execFile } = require('child_process');
 const os = require('os');
 
-console.log('main.js cargado correctamente');
+console.log('BACE POS cargado correctamente');
 
 let win;
 
@@ -186,13 +186,13 @@ ipcMain.handle('abrir-pdf', async (_event, url) => {
 // IPC: DESCARGAR PDF (guardar sin abrir)
 // ==============================
 ipcMain.handle('descargar-pdf', async (_event, url) => {
-  console.log('📥 IPC descargar-pdf con URL:', url);
+  console.log(' IPC descargar-pdf con URL:', url);
 
   try {
     const filePath = await descargarPdfSiNoExiste(url);
     return { success: true, path: filePath };
   } catch (error) {
-    console.error('❌ Error en descargar-pdf:', error);
+    console.error(' Error en descargar-pdf:', error);
     return { success: false, error: error.message };
   }
 });
@@ -206,7 +206,7 @@ ipcMain.handle('descargar-pdf', async (_event, url) => {
 // - Envuelve el PDF en HTML con @page margin 0 y lo imprime
 // ==============================
 ipcMain.handle('imprimir-pdf', async (_event, url) => {
-  console.log('🖨️ IPC imprimir-pdf con URL:', url);
+  console.log(' IPC imprimir-pdf con URL:', url);
 
   let printWin = null;
 
@@ -289,6 +289,116 @@ ipcMain.handle('abrir-carpeta', async (_event, carpeta) => {
   }
 });
 
+ipcMain.handle('crear-backup', async () => {
+  try {
+    const { backupsDir, databasePath, dbPath } = getPaths();
+    const sourceDb = databasePath || dbPath;
+
+    if (!sourceDb || !fs.existsSync(sourceDb)) {
+      return { success: false, error: 'No se encontró la base de datos.' };
+    }
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+
+    const fileName = `Backup_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.sqlite`;
+    const backupPath = path.join(backupsDir, fileName);
+
+    fs.copyFileSync(sourceDb, backupPath);
+
+    return {
+      success: true,
+      path: backupPath,
+      fileName
+    };
+  } catch (error) {
+    console.error(' Error creando backup:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('abrir-carpeta-backups', async () => {
+  try {
+    const { backupsDir } = getPaths();
+    const openError = await shell.openPath(backupsDir);
+
+    if (openError) return { success: false, error: openError };
+
+    return { success: true, path: backupsDir };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('restaurar-backup', async () => {
+  try {
+    const { databasePath, dbPath, backupsDir } = getPaths();
+    const targetDb = databasePath || dbPath;
+
+    if (!targetDb) {
+      return { success: false, error: 'No se encontró la ruta de la base de datos.' };
+    }
+
+    if (!fs.existsSync(targetDb)) {
+      return { success: false, error: 'No existe la base de datos actual para respaldar/restaurar.' };
+    }
+
+    const result = await dialog.showOpenDialog({
+      title: 'Seleccionar respaldo',
+      defaultPath: backupsDir,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Respaldos SQLite', extensions: ['sqlite', 'db'] },
+        { name: 'Todos los archivos', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled || !result.filePaths || !result.filePaths.length) {
+      return { success: false, canceled: true, error: 'Selección cancelada.' };
+    }
+
+    const sourceFile = result.filePaths[0];
+
+    if (!fs.existsSync(sourceFile)) {
+      return { success: false, error: 'El archivo seleccionado no existe.' };
+    }
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+
+    // 1) Respaldo automático de seguridad antes de restaurar
+    const safetyBackupName = `SafetyBackup_antes_de_restaurar_${timestamp}.sqlite`;
+    const safetyBackupPath = path.join(backupsDir, safetyBackupName);
+
+    fs.copyFileSync(targetDb, safetyBackupPath);
+
+    // 2) Restaurar el archivo seleccionado sobre la base actual
+    fs.copyFileSync(sourceFile, targetDb);
+
+    return {
+      success: true,
+      restoredFrom: sourceFile,
+      safetyBackup: safetyBackupPath,
+      message: 'Respaldo restaurado correctamente. Se creó una copia de seguridad automática antes de restaurar. Reinicia la aplicación para aplicar los cambios.'
+    };
+  } catch (error) {
+    console.error(' Error restaurando backup:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('reiniciar-app', async () => {
+  try {
+    app.relaunch();
+    app.exit(0);
+    return { success: true };
+  } catch (error) {
+    console.error(' Error reiniciando app:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('abrir-cajon', async (_event, printerName = 'AON Printer') => {
   try {
     // Comando ESC/POS para abrir cajón:
@@ -363,6 +473,8 @@ function crearVentana() {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: 'BACE POS',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

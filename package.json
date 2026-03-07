@@ -1,7 +1,7 @@
 {
-  "name": "sistema-facturacion",
+  "name": "bace-pos",
   "version": "1.0.0",
-  "description": "Sistema de facturación con Electron y SQLite portable",
+  "description": "BACE POS - Sistema POS de escritorio para ventas, inventario, créditos, caja y rutas",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,8 +9,8 @@
     "build": "electron-builder"
   },
   "build": {
-    "appId": "com.sistemafacturacion.app",
-    "productName": "Sistema de Facturación",
+    "appId": "com.bacepos.app",
+    "productName": "BACE POS",
     "directories": {
       "output": "dist"
     },

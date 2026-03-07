@@ -1988,6 +1988,177 @@ function toggleCamposPago() {
   }
 }
 
+const btnCrearBackup = document.getElementById('btnCrearBackup');
+const btnAbrirBackups = document.getElementById('btnAbrirBackups');
+const backupMsg = document.getElementById('backupMsg');
+
+if (btnCrearBackup) {
+  btnCrearBackup.addEventListener('click', async () => {
+    backupMsg.className = 'mt-3 small text-muted';
+    backupMsg.textContent = 'Creando respaldo...';
+
+    try {
+      const resp = await window.electronAPI.crearBackup();
+
+      if (resp.success) {
+        backupMsg.className = 'mt-3 small text-success';
+        backupMsg.textContent = `Respaldo creado correctamente: ${resp.fileName}`;
+      } else {
+        backupMsg.className = 'mt-3 small text-danger';
+        backupMsg.textContent = `Error: ${resp.error}`;
+      }
+    } catch (error) {
+      backupMsg.className = 'mt-3 small text-danger';
+      backupMsg.textContent = `Error: ${error.message}`;
+    }
+  });
+}
+
+if (btnAbrirBackups) {
+  btnAbrirBackups.addEventListener('click', async () => {
+    try {
+      const resp = await window.electronAPI.abrirCarpetaBackups();
+
+      if (!resp.success) {
+        backupMsg.className = 'mt-3 small text-danger';
+        backupMsg.textContent = `No se pudo abrir la carpeta: ${resp.error}`;
+      }
+    } catch (error) {
+      backupMsg.className = 'mt-3 small text-danger';
+      backupMsg.textContent = `Error: ${error.message}`;
+    }
+  });
+}
+
+
+const btnRestaurarBackup = document.getElementById('btnRestaurarBackup');
+const restoreMsg = document.getElementById('restoreMsg');
+const btnReiniciarApp = document.getElementById('btnReiniciarApp');
+
+if (btnRestaurarBackup) {
+  btnRestaurarBackup.addEventListener('click', async () => {
+    const confirmar = confirm(
+      'Esta acción reemplazará la base de datos actual con un respaldo seleccionado.\n\nSe recomienda crear un respaldo antes de continuar.\n\n¿Deseas seguir?'
+    );
+
+    if (!confirmar) return;
+
+    restoreMsg.className = 'mt-3 small text-muted';
+    restoreMsg.textContent = 'Seleccionando respaldo...';
+
+    try {
+      const resp = await window.electronAPI.restaurarBackup();
+
+      if (resp.canceled) {
+        restoreMsg.className = 'mt-3 small text-muted';
+        restoreMsg.textContent = 'Restauración cancelada.';
+        return;
+      }
+
+      if (resp.success) {
+  restoreMsg.className = 'mt-3 small text-success';
+  restoreMsg.textContent = resp.message || 'Respaldo restaurado correctamente.';
+  if (btnReiniciarApp) btnReiniciarApp.style.display = 'inline-block';
+
+  console.log('Restaurado desde:', resp.restoredFrom);
+  console.log('Backup de seguridad creado en:', resp.safetyBackup);
+} else {
+  restoreMsg.className = 'mt-3 small text-danger';
+  restoreMsg.textContent = `Error: ${resp.error}`;
+  if (btnReiniciarApp) btnReiniciarApp.style.display = 'none';
+}
+    } catch (error) {
+      restoreMsg.className = 'mt-3 small text-danger';
+      restoreMsg.textContent = `Error: ${error.message}`;
+    }
+  });
+}
+
+if (btnReiniciarApp) {
+  btnReiniciarApp.addEventListener('click', async () => {
+    btnReiniciarApp.disabled = true;
+    btnReiniciarApp.textContent = 'Reiniciando...';
+
+    try {
+      const resp = await window.electronAPI.reiniciarApp();
+
+      if (!resp.success) {
+        btnReiniciarApp.disabled = false;
+        btnReiniciarApp.textContent = 'Reiniciar aplicación';
+        restoreMsg.className = 'mt-3 small text-danger';
+        restoreMsg.textContent = `No se pudo reiniciar: ${resp.error}`;
+      }
+    } catch (error) {
+      btnReiniciarApp.disabled = false;
+      btnReiniciarApp.textContent = 'Reiniciar aplicación';
+      restoreMsg.className = 'mt-3 small text-danger';
+      restoreMsg.textContent = `Error: ${error.message}`;
+    }
+  });
+}
+
+const configNombreNegocio = document.getElementById('configNombreNegocio');
+const configTelefonoNegocio = document.getElementById('configTelefonoNegocio');
+const configDireccionNegocio = document.getElementById('configDireccionNegocio');
+const configNitNegocio = document.getElementById('configNitNegocio');
+const btnGuardarConfigNegocio = document.getElementById('btnGuardarConfigNegocio');
+const configNegocioMsg = document.getElementById('configNegocioMsg');
+
+async function cargarConfiguracionNegocio() {
+  try {
+    const resp = await fetch('/configuracion');
+    const data = await resp.json();
+
+    if (data?.negocio) {
+      if (configNombreNegocio) configNombreNegocio.value = data.negocio.nombre || '';
+      if (configTelefonoNegocio) configTelefonoNegocio.value = data.negocio.telefono || '';
+      if (configDireccionNegocio) configDireccionNegocio.value = data.negocio.direccion || '';
+      if (configNitNegocio) configNitNegocio.value = data.negocio.nit || '';
+    }
+  } catch (error) {
+    console.error(' Error cargando configuración:', error);
+    if (configNegocioMsg) {
+      configNegocioMsg.className = 'mt-3 small text-danger';
+      configNegocioMsg.textContent = 'No se pudo cargar la configuración del negocio.';
+    }
+  }
+}
+
+if (btnGuardarConfigNegocio) {
+  btnGuardarConfigNegocio.addEventListener('click', async () => {
+    configNegocioMsg.className = 'mt-3 small text-muted';
+    configNegocioMsg.textContent = 'Guardando configuración...';
+
+    try {
+      const payload = {
+        nombre: configNombreNegocio?.value || '',
+        telefono: configTelefonoNegocio?.value || '',
+        direccion: configDireccionNegocio?.value || '',
+        nit: configNitNegocio?.value || ''
+      };
+
+      const resp = await fetch('/configuracion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await resp.json();
+
+      if (!resp.ok) {
+        throw new Error(result.error || 'No se pudo guardar la configuración.');
+      }
+
+      configNegocioMsg.className = 'mt-3 small text-success';
+      configNegocioMsg.textContent = result.message || 'Configuración guardada correctamente.';
+    } catch (error) {
+      configNegocioMsg.className = 'mt-3 small text-danger';
+      configNegocioMsg.textContent = error.message;
+    }
+  });
+}
 // =========================================
 // 🔄 REFRESCAR UI DE RUTAS (GLOBAL)
 // =========================================
@@ -2091,6 +2262,7 @@ function init() {
   renderProductosRuta();
   cargarRutasDevolucion();
   cargarRutasParaImprimir();
+  cargarConfiguracionNegocio();
 
   // ✅ Guardar configuración cuando cambien los switches
   el('switchEliminarProductos')?.addEventListener('change', guardarConfiguracion);
@@ -2182,5 +2354,7 @@ function init() {
     });
   });
 }
+
+
 
 document.addEventListener('DOMContentLoaded', init);
