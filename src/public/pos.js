@@ -300,12 +300,15 @@ async function facturar() {
 
   const resultDiv = el('result');
   const errorDiv = el('error');
-  const btnAbrirPDF = el('btnAbrirPDF');
+  const btnAbrirTicket = el('btnAbrirTicket');
+  const btnAbrirFactura = el('btnAbrirFactura');
+  btnAbrirTicket.style.display = 'none';
+  btnAbrirFactura.style.display = 'none';
 
   // ✅ Limpiar mensajes previos
   resultDiv.textContent = '';
   errorDiv.textContent = '';
-  btnAbrirPDF.style.display = 'none';
+  
 
   try {
     // ✅ Crear factura en el backend
@@ -343,13 +346,8 @@ async function facturar() {
 
     // ✅ Guardar automáticamente el PDF en disco (sin abrirlo)
     if (window.electronAPI && window.electronAPI.descargarPDF) {
-      window.electronAPI.descargarPDF(`/facturas/${facturaId}/pdf`)
-        .then(res => {
-          if (!res?.success) {
-            console.warn('No se pudo guardar automáticamente el PDF:', res?.error);
-          }
-        })
-        .catch(err => console.warn('Error guardando PDF automático:', err));
+      window.electronAPI.descargarPDF(`/facturas/${facturaId}/pdf`).catch(()=>{});
+      window.electronAPI.descargarPDF(`/facturas/${facturaId}/ticket`).catch(()=>{});
     }
 
 
@@ -368,21 +366,17 @@ async function facturar() {
       cargarMovimientosFinancieros();
     }
 
-    // 📄 Mostrar botón para abrir PDF generado
-    btnAbrirPDF.style.display = 'block';
-   btnAbrirPDF.onclick = () => {
-  abrirFacturaPDF(`/facturas/${facturaId}/ticket`);
-};
+   // 📄 Mostrar botones para abrir PDFs generados
+btnAbrirTicket.style.display = 'block';
+btnAbrirFactura.style.display = 'block';
 
-// 📄 Mostrar botón para re-imprimir ticket
-btnAbrirPDF.style.display = 'block';
-btnAbrirPDF.textContent = '🧾 Re-imprimir ticket';
+btnAbrirTicket.textContent = '🧾 Abrir Ticket (última factura)';
+btnAbrirFactura.textContent = '📄 Abrir Factura Completa (última factura)';
 
-btnAbrirPDF.onclick = () => {
-  abrirFacturaPDF(`/facturas/${facturaId}/pdf`); // si querés abrir PDF normal
-};
+btnAbrirTicket.onclick = () => abrirFacturaPDF(`/facturas/${facturaId}/ticket?pdf=1`);
+btnAbrirFactura.onclick = () => abrirFacturaPDF(`/facturas/${facturaId}/pdf`);
 
-// imprimir ticket térmico
+// 🖨️ (opcional) imprimir ticket térmico automáticamente
 if (window.electronAPI?.imprimirPDF) {
   window.electronAPI.imprimirPDF(`/facturas/${facturaId}/ticket`);
 }
@@ -2109,6 +2103,8 @@ function init() {
   el('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
   el('btnConfirmDelete')?.addEventListener('click', confirmarEliminar);
   el('btnSaveProductChanges')?.addEventListener('click', guardarCambiosProducto);
+
+  
   
 
   // ✅ POS filtros
@@ -2139,6 +2135,13 @@ function init() {
   // ✅ Rutas
   document.getElementById('btnGuardarRuta')?.addEventListener('click', crearRuta);
   document.getElementById('btnImprimirRuta')?.addEventListener('click', imprimirRuta);
+
+  //  abre facturasPDF
+  document.getElementById('btnUltimas')?.addEventListener('click', async () => {
+  if (window.electronAPI?.abrirCarpeta) {
+    await window.electronAPI.abrirCarpeta('facturas'); 
+  }
+});
 
   // ✅ Rutas - devolución
   document.getElementById('selectRutaDevolucion')?.addEventListener('change', cargarDetallesRutaDevolucion);

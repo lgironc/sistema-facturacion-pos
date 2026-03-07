@@ -18,3 +18,16 @@ facturas_pos/
 
 # Archivos de entorno o configuración local
 .env
+
+data/database.sqlite
+ticketsPDF/
+node_modules/
+dist/
+facturasPDF/
+rutasPDF/
+cierresPDF/
+DataApp/
+*.db
+*.log
+*.exe
+*.zip

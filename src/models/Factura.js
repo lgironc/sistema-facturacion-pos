@@ -21,6 +21,11 @@ defaultValue: 0
     type: DataTypes.FLOAT,
     allowNull: true
   },
+  cambio: {                // ✅ NUEVO
+  type: DataTypes.FLOAT,
+  allowNull: true,
+  defaultValue: 0
+},
   fecha: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW

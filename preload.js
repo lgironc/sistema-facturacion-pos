@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   descargarPDF: (url) => ipcRenderer.invoke('descargar-pdf', url),
   imprimirPDF: (url) => ipcRenderer.invoke('imprimir-pdf', url),
   abrirCajon: (printerName) => ipcRenderer.invoke('abrir-cajon', printerName),
+  abrirCarpeta: (carpeta) => ipcRenderer.invoke('abrir-carpeta', carpeta),
 });

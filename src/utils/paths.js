@@ -21,6 +21,7 @@ function getPaths() {
   // Todo al lado del exe (portable)
   const dataDir = ensureFolder(path.join(baseDir, 'Data'));
   const pdfDirFacturas = ensureFolder(path.join(baseDir, 'facturasPDF'));
+  const pdfDirTickets  = ensureFolder(path.join(baseDir, 'ticketsPDF'));
   const pdfDirRutas = ensureFolder(path.join(baseDir, 'rutasPDF'));
   const pdfDirCierres = ensureFolder(path.join(baseDir, 'cierresPDF'));
 
@@ -31,6 +32,7 @@ function getPaths() {
     dataDir,
     dbPath,
     facturasPDFDir: pdfDirFacturas,
+    ticketsPDFDir: pdfDirTickets, 
     rutasPDFDir: pdfDirRutas,
     cierresPDFDir: pdfDirCierres
   };

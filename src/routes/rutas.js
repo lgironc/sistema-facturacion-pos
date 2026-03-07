@@ -66,7 +66,8 @@ const ruta = await Ruta.create({
         rutaId: ruta.id,
         productoId: p.productoId,
         cantidadSalida: p.cantidadSalida,
-        cantidadDevuelta: 0
+        cantidadDevuelta: 0,
+        precioVenta: prod.precioVenta // ✅ congelado
       });
 
       await prod.update({
@@ -172,6 +173,103 @@ router.get('/devoluciones/flat', async (req, res) => {
   }
 });
 
+
+router.post('/:id/liquidar', async (req, res) => {
+  const { id } = req.params;
+  const { detalles, totalCobrado, observaciones } = req.body;
+
+  const t = await sequelize.transaction();
+  try {
+    const ruta = await Ruta.findByPk(id, {
+      include: [{ model: RutaDetalle, as: 'DetallesRuta' }],
+      transaction: t,
+      lock: t.LOCK.UPDATE
+    });
+    if (!ruta) {
+      await t.rollback();
+      return res.status(404).json({ error: 'Ruta no encontrada' });
+    }
+
+    if (ruta.estado === 'LIQUIDADA') {
+      await t.rollback();
+      return res.status(400).json({ error: 'Ruta ya fue liquidada' });
+    }
+
+    // 1) Guardar devoluciones (si vienen)
+    if (Array.isArray(detalles)) {
+      for (const d of detalles) {
+        const det = await RutaDetalle.findByPk(d.rutaDetalleId, { transaction: t, lock: t.LOCK.UPDATE });
+        if (!det) continue;
+        if (Number(det.rutaId) !== Number(id)) continue;
+
+        const salida = Number(det.cantidadSalida || 0);
+        let nuevaDev = Number(d.cantidadDevuelta || 0);
+        if (!Number.isFinite(nuevaDev) || nuevaDev < 0) nuevaDev = 0;
+        if (nuevaDev > salida) nuevaDev = salida;
+
+        const devueltaActual = Number(det.cantidadDevuelta || 0);
+        const delta = nuevaDev - devueltaActual;
+
+        det.cantidadDevuelta = nuevaDev;
+        await det.save({ transaction: t });
+
+        // ⚠️ IMPORTANTE:
+        // Como tú YA descontaste stock en la salida,
+        // aquí solo devolvemos stock por el delta (igual que tu endpoint actual).
+        if (delta !== 0) {
+          const prod = await Producto.findByPk(det.productoId, { transaction: t, lock: t.LOCK.UPDATE });
+          if (prod) {
+            prod.stock = Number(prod.stock || 0) + delta;
+            await prod.save({ transaction: t });
+          }
+        }
+      }
+    }
+
+    // 2) Recalcular total esperado con precios congelados
+    const detallesFinal = await RutaDetalle.findAll({ where: { rutaId: id }, transaction: t });
+
+    const totalEsperadoNum = detallesFinal.reduce((sum, d) => {
+      const salida = Number(d.cantidadSalida || 0);
+      const dev = Number(d.cantidadDevuelta || 0);
+      const vendido = Math.max(0, salida - dev);
+      const precio = Number(d.precioVenta || 0);
+      return sum + (vendido * precio);
+    }, 0);
+
+    const cobradoNum = Number(totalCobrado || 0);
+    if (!Number.isFinite(cobradoNum) || cobradoNum < 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'totalCobrado inválido' });
+    }
+
+    const diferenciaNum = cobradoNum - totalEsperadoNum;
+
+    // 3) Cerrar ruta
+    ruta.totalEsperado = totalEsperadoNum.toFixed(2);
+    ruta.totalCobrado = cobradoNum.toFixed(2);
+    ruta.diferencia = diferenciaNum.toFixed(2);
+    ruta.estado = 'LIQUIDADA';
+    ruta.fechaLiquidacion = new Date();
+    if (typeof observaciones === 'string') ruta.observaciones = observaciones;
+
+    await ruta.save({ transaction: t });
+
+    await t.commit();
+    return res.json({
+      ok: true,
+      rutaId: ruta.id,
+      totalEsperado: Number(ruta.totalEsperado),
+      totalCobrado: Number(ruta.totalCobrado),
+      diferencia: Number(ruta.diferencia)
+    });
+
+  } catch (error) {
+    await t.rollback();
+    console.error('Error en POST /rutas/:id/liquidar:', error);
+    return res.status(500).json({ error: 'Error liquidando ruta', message: error.message });
+  }
+});
 // ===============================================
 // GET /rutas/devoluciones/resumen
 // Resumen de rutas: muestra TODAS las rutas con detalles
@@ -191,7 +289,7 @@ router.get('/devoluciones/resumen', async (req, res) => {
       whereRuta.direccion = { [Op.like]: `%${direccion.trim()}%` };
     }
     if (vehiculo && vehiculo.trim()) {
-  whereRuta.vehiculo = { [Op.like]: `%${vehiculo.trim()}%` };
+  whereRuta.placa = { [Op.like]: `%${vehiculo.trim()}%` };
 }
     if (fecha && fecha.trim()) {
       whereRuta.fecha = fecha.trim();

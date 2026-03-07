@@ -24,6 +24,7 @@ const { getPaths } = require('./src/utils/paths');
 const {
   facturasPDFDir,
   rutasPDFDir,
+  ticketsPDFDir, 
   cierresPDFDir
 } = getPaths();
 
@@ -38,6 +39,7 @@ function ensureFolder(folder) {
 }
 
 ensureFolder(facturasPDFDir);
+ensureFolder(ticketsPDFDir);
 ensureFolder(rutasPDFDir);
 ensureFolder(cierresPDFDir);
 
@@ -64,7 +66,7 @@ function getPdfPathFromUrl(originalUrl) {
   if (match) {
     const facturaId = match[1];
     const numeroFactura = `INT-${String(facturaId).padStart(4, '0')}`;
-    return path.join(facturasPDFDir, `Ticket_${numeroFactura}.pdf`);
+    return path.join(ticketsPDFDir, `Ticket_${numeroFactura}.pdf`);
   }
 
   // RUTAS
@@ -98,42 +100,65 @@ function getPdfPathFromUrl(originalUrl) {
 }
 
 
+// ==============================
+// Helper: descargar PDF y guardarlo localmente
+// ==============================
 async function descargarPdfSiNoExiste(url) {
-  console.log(' descargarPdfSiNoExiste URL recibida:', url);
+  const fullUrl = url.startsWith('http') ? url : `http://localhost:4000${url}`;
 
-  const urlLogica = url.startsWith('http') ? new URL(url).pathname : url;
-  const filePath = getPdfPathFromUrl(urlLogica);
+  // Carpeta destino (más estable que OneDrive): %TEMP%/bacepos_pdfs
+  const dir = path.join(os.tmpdir(), 'bacepos_pdfs');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  if (fs.existsSync(filePath)) {
-    console.log(' PDF local encontrado:', filePath);
-    return filePath;
+  // Nombre de archivo limpio (sin query)
+  // Ej: /facturas/54/ticket?pdf=1  -> facturas_54_ticket.pdf
+  const clean = fullUrl.split('?')[0]
+    .replace(/^https?:\/\/[^/]+/i, '')  // quita dominio
+    .replace(/^\//, '')
+    .replace(/[\/\\:]+/g, '_');         // rutas a underscores
+
+  const filePath = path.join(dir, `${clean}.pdf`);
+
+  // Si ya existe y tiene tamaño > 1KB, lo reutilizamos
+  try {
+    if (fs.existsSync(filePath)) {
+      const st = fs.statSync(filePath);
+      if (st.size > 1024) return filePath;
+    }
+  } catch (_) {}
+
+  // Descargar
+  const resp = await fetch(fullUrl, {
+    method: 'GET',
+    headers: { 'Accept': 'application/pdf' }
+  });
+
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} al descargar PDF: ${fullUrl}`);
   }
 
-  // Descargar/generar desde backend
-  let fullUrl = url.startsWith('http') ? url : `http://localhost:4000${urlLogica}`;
-  const client = fullUrl.startsWith('https') ? https : http;
+  const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+  const buf = Buffer.from(await resp.arrayBuffer());
 
-  console.log('[MAIN] Descargando/Generando PDF desde:', fullUrl);
+  // Validación fuerte: debe ser PDF real
+  const isPdfByHeader = buf.slice(0, 4).toString('utf8') === '%PDF';
+  const isPdfByType = contentType.includes('application/pdf');
 
-  await new Promise((resolve, reject) => {
-    client.get(fullUrl, (response) => {
-      if (response.statusCode !== 200) {
-        let body = '';
-        response.on('data', chunk => (body += chunk.toString()));
-        response.on('end', () => reject(new Error(`Error PDF ${response.statusCode} - ${body}`)));
-        return;
-      }
+  if (!isPdfByHeader && !isPdfByType) {
+    // Guardamos debug para ver qué llegó
+    const debugPath = path.join(dir, `${clean}.debug.html`);
+    try { fs.writeFileSync(debugPath, buf); } catch (_) {}
+    throw new Error(`El endpoint no devolvió PDF. content-type="${contentType}". Se guardó debug: ${debugPath}`);
+  }
 
-      const fileStream = fs.createWriteStream(filePath);
-      response.pipe(fileStream);
+  // Guardar buffer completo
+  fs.writeFileSync(filePath, buf);
 
-      fileStream.on('finish', () => {
-        fileStream.close();
-        console.log(` PDF guardado como: ${filePath}`);
-        resolve();
-      });
-    }).on('error', reject);
-  });
+  // Verificación final
+  const st2 = fs.statSync(filePath);
+  if (st2.size < 1024) {
+    throw new Error(`PDF descargado pero muy pequeño (${st2.size} bytes): ${filePath}`);
+  }
 
   return filePath;
 }
@@ -142,20 +167,17 @@ async function descargarPdfSiNoExiste(url) {
 // IPC: PDF
 // ==============================
 ipcMain.handle('abrir-pdf', async (_event, url) => {
-  console.log(' IPC abrir-pdf con URL:', url);
-
+  console.log('📄 IPC abrir-pdf con URL:', url);
   try {
     const filePath = await descargarPdfSiNoExiste(url);
-    const openError = await shell.openPath(filePath);
+    console.log('✅ PDF local:', filePath);
 
-    if (openError) {
-      console.error(' Error al abrir PDF:', openError);
-      return { success: false, path: filePath, error: openError };
-    }
+    const openError = await shell.openPath(filePath);
+    if (openError) return { success: false, path: filePath, error: openError };
 
     return { success: true, path: filePath, error: null };
   } catch (error) {
-    console.error('Error general en abrir-pdf:', error);
+    console.error(' Error general en abrir-pdf:', error);
     return { success: false, error: error.message };
   }
 });
@@ -176,7 +198,12 @@ ipcMain.handle('descargar-pdf', async (_event, url) => {
 });
 
 // ==============================
-// IPC: IMPRIMIR PDF (robusto) - embebe PDF en HTML y espera render
+// IPC: IMPRIMIR PDF (robusto) - carga URL y imprime sin márgenes
+// ==============================
+// ==============================
+// IPC: IMPRIMIR PDF (sin feed extra)
+// - NO carga el PDF directo (visor PDF mete margen/feed)
+// - Envuelve el PDF en HTML con @page margin 0 y lo imprime
 // ==============================
 ipcMain.handle('imprimir-pdf', async (_event, url) => {
   console.log('🖨️ IPC imprimir-pdf con URL:', url);
@@ -184,10 +211,33 @@ ipcMain.handle('imprimir-pdf', async (_event, url) => {
   let printWin = null;
 
   try {
-    const urlHtml = url; // imprime el mismo /ticket (ya es HTML)
-    const fullUrl = urlHtml.startsWith('http')
-      ? urlHtml
-      : `http://localhost:4000${urlHtml}`;
+    const fullUrl = url.startsWith('http') ? url : `http://localhost:4000${url}`;
+
+    // HTML en memoria (NO endpoint nuevo)
+    const html = `
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  /* Tamaño térmico + cero margen */
+  @page { size: 80mm auto; margin: 0; }
+  html, body { margin: 0; padding: 0; background: white; }
+  /* Embebemos el PDF sin márgenes */
+  iframe { position: fixed; left: 0; top: 0; width: 80mm; height: 100vh; border: 0; }
+</style>
+</head>
+<body>
+  <iframe id="pdf" src="${fullUrl}"></iframe>
+  <script>
+    const f = document.getElementById('pdf');
+    // Esperar a que el iframe cargue el PDF y luego imprimir
+    f.onload = () => setTimeout(() => window.print(), 200);
+  </script>
+</body>
+</html>`;
+
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
 
     printWin = new BrowserWindow({
       show: false,
@@ -195,23 +245,23 @@ ipcMain.handle('imprimir-pdf', async (_event, url) => {
       webPreferences: { sandbox: false }
     });
 
-    await printWin.loadURL(fullUrl);
+    await printWin.loadURL(dataUrl);
 
-    // esperar render
-    await new Promise(r => setTimeout(r, 400));
+    // Esperar render/print
+    await new Promise(r => setTimeout(r, 800));
 
-    const out = await new Promise(resolve => {
-      printWin.webContents.print(
-        {
-          silent: false,
-          printBackground: false,
-          scaleFactor: 1.0,
-          deviceName: 'AON Printer', // opcional
-        marginsType: 1
-       
-        },
-        (success, reason) => resolve({ success, error: success ? null : (reason || 'Fallo impresión') })
-      );
+    const options = {
+      silent: false, // cuando ya esté bien, lo pones true
+      printBackground: true,
+      margins: { marginType: 'none' },
+      scaleFactor: 100,
+      deviceName: 'AON Printer' // opcional
+    };
+
+    const out = await new Promise((resolve) => {
+      printWin.webContents.print(options, (success, reason) => {
+        resolve({ success, error: success ? null : (reason || 'Fallo impresión') });
+      });
     });
 
     return out;
@@ -220,7 +270,22 @@ ipcMain.handle('imprimir-pdf', async (_event, url) => {
     console.error('❌ Error imprimiendo:', e);
     return { success: false, error: e.message };
   } finally {
-    if (printWin) { try { printWin.close(); } catch (_) {} }
+    if (printWin) { try { printWin.destroy(); } catch (_) {} }
+  }
+});
+
+ipcMain.handle('abrir-carpeta', async (_event, carpeta) => {
+  try {
+    let dir = facturasPDFDir;
+    if (carpeta === 'tickets') dir = ticketsPDFDir;
+    if (carpeta === 'facturas') dir = facturasPDFDir;
+
+    const openError = await shell.openPath(dir);
+    if (openError) return { success: false, error: openError };
+
+    return { success: true, path: dir };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 });
 
